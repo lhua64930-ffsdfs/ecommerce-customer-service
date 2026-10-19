@@ -18,6 +18,16 @@
 - **知识库管理**:增删改查 + 语义检索,变更自动重建向量
 - **会话记录**:历史会话列表与完整对话回放
 
+## 界面预览
+
+| 智能对话 | 数据看板 |
+| --- | --- |
+| ![智能对话](docs/images/chat-order.png) | ![数据看板](docs/images/dashboard.png) |
+
+| 知识库管理 | 会话记录 |
+| --- | --- |
+| ![知识库管理](docs/images/knowledge.png) | ![会话记录](docs/images/sessions.png) |
+
 ## 技术栈
 
 | 层 | 技术 |
@@ -242,3 +252,7 @@ python scripts/init_vector_db.py
 - [API 规范](docs/API_SPEC.md)
 - [数据库设计](docs/DATABASE_SCHEMA.md)
 - [部署指南](docs/DEPLOYMENT.md)
+
+## 许可证
+
+本项目采用 [MIT License](LICENSE)。
