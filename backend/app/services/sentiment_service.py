@@ -37,7 +37,10 @@ class SentimentService:
         "及时": 0.5, "耐心": 0.6, "专业": 0.5,
     }
 
-    NEGATION_WORDS = ("不", "没", "无", "非", "别", "勿", "未")
+    # 注意:不含「非」——否则「非常满意」会被误判为否定
+    NEGATION_WORDS = ("不", "没", "无", "别", "勿", "未")
+    # 否定作用域到此为止的标点
+    CLAUSE_SEPARATORS = "，,。.!！?？；;、\n "
 
     def __init__(self) -> None:
         # 长词优先,避免"非常差"被拆成"差"重复计分
@@ -91,8 +94,11 @@ class SentimentService:
         return matches
 
     def _is_negated(self, text: str, index: int) -> bool:
-        """只看情感词前 4 个字符内是否有否定词。"""
-        window = text[max(0, index - 4):index]
+        """只看情感词前 3 个字符,且不跨越标点/分句。"""
+        window = text[max(0, index - 3):index]
+        for separator in self.CLAUSE_SEPARATORS:
+            if separator in window:
+                window = window.rsplit(separator, 1)[-1]
         return any(neg in window for neg in self.NEGATION_WORDS)
 
     @staticmethod
