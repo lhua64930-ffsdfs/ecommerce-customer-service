@@ -69,27 +69,10 @@ services:
       timeout: 20s
       retries: 3
 
-  # ---------------- Milvus 依赖: MinIO(对象存储) ----------------
-  minio:
-    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
-    container_name: cs-milvus-minio
-    restart: unless-stopped
-    environment:
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
-    ports:
-      - "9001:9001"   # 控制台 http://localhost:9001 (minioadmin/minioadmin)
-      - "9000:9000"   # API
-    volumes:
-      - minio_data:/minio_data
-    command: minio server /minio_data --console-address ":9001"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
-
   # ---------------- Milvus standalone: 向量数据库 ----------------
+  # 说明:MinIO 官方镜像自 2025 年起不再公共分发(Docker Hub / Quay 均 401),
+  #      因此使用 Milvus 官方支持的单机本地存储模式(COMMON_STORAGETYPE=local),
+  #      数据持久化在 milvus_data 卷,功能与 MinIO 模式等价。
   milvus:
     image: milvusdb/milvus:v2.5.4
     container_name: cs-milvus
@@ -99,7 +82,8 @@ services:
       - seccomp:unconfined
     environment:
       ETCD_ENDPOINTS: etcd:2379
-      MINIO_ADDRESS: minio:9000
+      COMMON_STORAGETYPE: local
+      LOCAL_STORAGEPATH: /var/lib/milvus/data
     volumes:
       - milvus_data:/var/lib/milvus
     ports:
@@ -107,8 +91,6 @@ services:
       - "9091:9091"    # 健康检查 / metrics
     depends_on:
       etcd:
-        condition: service_healthy
-      minio:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
@@ -121,5 +103,4 @@ volumes:
   mysql_data:
   redis_data:
   etcd_data:
-  minio_data:
   milvus_data:
