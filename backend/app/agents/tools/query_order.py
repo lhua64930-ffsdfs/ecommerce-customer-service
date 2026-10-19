@@ -130,7 +130,11 @@ class QueryOrderTool:
     @staticmethod
     def _format_address(address: Any) -> str:
         if isinstance(address, dict):
-            return "".join(str(address.get(key, "")) for key in ("province", "city", "detail"))
+            province = str(address.get("province", ""))
+            city = str(address.get("city", ""))
+            detail = str(address.get("detail", ""))
+            # 直辖市省市同名时只保留一个
+            return f"{province}{'' if city == province else city}{detail}"
         return str(address or "")
 
     @staticmethod
