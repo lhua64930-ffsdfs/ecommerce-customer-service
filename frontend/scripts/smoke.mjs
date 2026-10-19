@@ -40,6 +40,28 @@ try {
   console.log('NEGATIVE_BADGE_OK:', transferText.includes('需要关注'))
   await page.screenshot({ path: `${SHOT_DIR}/chat-transfer.png` })
 
+  await page.goto(`${BASE}/dashboard`, { waitUntil: 'domcontentloaded' })
+  await page.waitForSelector('text=意图分布', { timeout: 15000 })
+  await page.waitForTimeout(1200)
+  const dashboardText = await page.locator('body').innerText()
+  console.log('DASHBOARD_OK:', dashboardText.includes('会话总量') && dashboardText.includes('情感分布'))
+  await page.screenshot({ path: `${SHOT_DIR}/dashboard.png`, fullPage: true })
+
+  await page.goto(`${BASE}/knowledge`, { waitUntil: 'domcontentloaded' })
+  await page.waitForSelector('text=知识库管理', { timeout: 15000 })
+  await page.waitForSelector('text=怎么联系人工客服', { timeout: 15000 })
+  console.log('KNOWLEDGE_OK:', true)
+  await page.screenshot({ path: `${SHOT_DIR}/knowledge.png`, fullPage: true })
+
+  await page.goto(`${BASE}/sessions`, { waitUntil: 'domcontentloaded' })
+  await page.waitForSelector('text=会话ID', { timeout: 15000 })
+  await page.getByRole('button', { name: '查看' }).first().click()
+  await page.waitForSelector('.ant-drawer-open', { timeout: 15000 })
+  await page.waitForSelector('.ant-drawer-body .message-bubble', { timeout: 15000 })
+  const drawerText = await page.locator('.ant-drawer-body').innerText()
+  console.log('SESSION_DETAIL_OK:', drawerText.includes('订单详情') || drawerText.includes('转接投诉'))
+  await page.screenshot({ path: `${SHOT_DIR}/sessions.png` })
+
   console.log('PAGE_ERRORS:', errors.length ? JSON.stringify(errors) : 'none')
 } finally {
   await browser.close()

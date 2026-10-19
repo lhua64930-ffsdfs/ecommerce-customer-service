@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config_loader import load_config
 from app.models.session import Session
 from app.utils.cache import get_redis
 from app.utils.logger import logger
@@ -53,7 +54,12 @@ class TransferHumanTool:
     def _detect_reason(message: str) -> str:
         if "投诉" in message:
             return "投诉"
-        if any(word in message for word in ("人工", "真人", "客服")):
+
+        transfer_config = load_config("agent_config").get("agent", {}).get("transfer", {})
+        keywords = transfer_config.get(
+            "manual_trigger_keywords", ["人工", "转人工", "真人", "找客服"]
+        )
+        if any(word in message for word in keywords):
             return "用户主动请求"
         return "其他"
 

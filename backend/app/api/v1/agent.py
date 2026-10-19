@@ -3,6 +3,7 @@ from fastapi import APIRouter
 
 from app.agents.customer_agent import CustomerServiceAgent
 from app.core.config import settings
+from app.core.config_loader import load_config
 from app.services.llm_service import LLMService
 
 router = APIRouter()
@@ -12,8 +13,10 @@ router = APIRouter()
 async def agent_info() -> dict:
     agent = CustomerServiceAgent(session_id="system")
     llm = LLMService()
+    agent_config = load_config("agent_config").get("agent", {})
     return {
-        "name": "小e",
+        "name": agent_config.get("name", "小e"),
+        "personality": agent_config.get("personality", ""),
         "version": settings.VERSION,
         "model": settings.LLM_MODEL,
         "llm_provider": settings.LLM_PROVIDER,

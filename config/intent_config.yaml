@@ -1,0 +1,19 @@
+# NLU 意图识别配置。
+nlu:
+  # 低于该置信度时回退到 fallback 或转人工策略
+  intent_threshold: 0.6
+  enable_multilabel: false
+  fallback_confidence: 0.4
+
+  classifier:
+    # hybrid = 关键词规则 + LLM 融合(当前实现)
+    type: "hybrid"
+
+  entity:
+    enable: true
+    types:
+      - order_no
+      - phone
+      - product_name
+      - price
+      - date

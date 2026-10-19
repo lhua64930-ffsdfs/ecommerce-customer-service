@@ -1,0 +1,19 @@
+# Agent 行为配置。
+agent:
+  name: "小e"
+  personality: "专业、友好、有耐心"
+
+  react:
+    max_iterations: 5
+    timeout_seconds: 30
+    enable_reflection: true
+
+  transfer:
+    auto_transfer_on_complaint: true
+    auto_transfer_on_negative: true
+    auto_transfer_threshold: -0.5 # 情感得分低于该值时建议转人工
+    manual_trigger_keywords:
+      - "人工"
+      - "转人工"
+      - "真人"
+      - "找客服"

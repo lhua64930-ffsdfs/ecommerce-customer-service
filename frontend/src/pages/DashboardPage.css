@@ -1,0 +1,22 @@
+.dashboard-loading {
+  display: block;
+  margin: 120px auto;
+}
+
+.kpi-card {
+  height: 100%;
+}
+
+.kpi-card .ant-statistic-title {
+  color: #8a8f99;
+  font-size: 13px;
+}
+
+.kpi-card .ant-statistic-content {
+  color: #1f2329;
+  font-size: 24px;
+}
+
+.dashboard-charts {
+  margin-top: 16px;
+}
