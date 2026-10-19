@@ -4,10 +4,12 @@
  *   node scripts/smoke.mjs
  * 使用系统已安装的 Microsoft Edge,无需额外下载浏览器。
  */
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { chromium } from 'playwright'
 
 const BASE = process.env.BASE_URL || 'http://127.0.0.1:5173'
-const SHOT_DIR = process.env.SHOT_DIR || 'C:/Users/hp/AppData/Local/Temp'
+const SHOT_DIR = process.env.SHOT_DIR || tmpdir()
 
 const errors = []
 const browser = await chromium.launch({ channel: 'msedge', headless: true })
