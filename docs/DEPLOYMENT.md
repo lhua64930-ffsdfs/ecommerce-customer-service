@@ -15,7 +15,7 @@
 
 | 服务 | 端口 |
 | --- | --- |
-| Nginx(生产入口) | 80 |
+| Nginx(生产入口) | 8080(Windows 默认;Linux 可改回 80) |
 | 后端 API | 8000 |
 | 前端开发服务器 | 5173 |
 | MySQL | 3306 |
@@ -47,15 +47,22 @@ npm run dev
 
 ## 4. 生产部署(Docker)
 
-```bash
-# 可选:在项目根目录创建 .env
-# LLM_PROVIDER=deepseek
-# LLM_API_KEY=sk-xxx
+密钥只从环境变量注入,不要写入 `.env` 或 compose 文件。
+若 Key 已存放在 `DEEPSEEK_API_KEY`,启动时映射为 `LLM_API_KEY`:
 
-docker compose -f docker/docker-compose.yml up -d --build
+```bash
+# Git Bash / Linux / macOS
+LLM_API_KEY="$DEEPSEEK_API_KEY" docker compose -f docker/docker-compose.yml up -d --build
+
+# PowerShell
+# $env:LLM_API_KEY = $env:DEEPSEEK_API_KEY
+# docker compose -f docker/docker-compose.yml up -d --build
 ```
 
-访问 http://localhost,API 文档 http://localhost/docs。
+未提供 Key 时自动使用 mock 模式。
+
+访问 http://localhost:8080,API 文档 http://localhost:8080/docs。
+Windows 默认禁止绑定 80 端口,因此映射为 8080;Linux 可将 compose 中 nginx 端口改回 `"80:80"`。
 
 首次启动后端会:
 

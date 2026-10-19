@@ -148,16 +148,30 @@ node scripts/smoke.mjs
 
 ## Docker 整体部署
 
-```bash
-# 可选:在项目根目录创建 .env 配置 DeepSeek Key
-# LLM_API_KEY=sk-xxx
+密钥只从环境变量注入,**不要写入 `.env` 或 compose 文件**。
+如果 Key 存放在 `DEEPSEEK_API_KEY` 中,启动时映射给 compose 读取的 `LLM_API_KEY`:
 
-docker compose -f docker/docker-compose.yml up -d --build
+```bash
+# Git Bash / Linux / macOS
+LLM_API_KEY="$DEEPSEEK_API_KEY" docker compose -f docker/docker-compose.yml up -d --build
+
+# PowerShell
+# $env:LLM_API_KEY = $env:DEEPSEEK_API_KEY
+# docker compose -f docker/docker-compose.yml up -d --build
+
+# Windows CMD
+# set LLM_API_KEY=%DEEPSEEK_API_KEY%
+# docker compose -f docker/docker-compose.yml up -d --build
 ```
 
-- 应用入口:http://localhost
-- API 文档:http://localhost/docs
+未提供 Key 时后端自动进入 mock 模式,系统其余功能不受影响。
+
+- 应用入口:http://localhost:8080
+- API 文档:http://localhost:8080/docs
 - 后端直连:http://localhost:8000
+
+> Windows 默认禁止绑定 80 端口,因此 Nginx 映射为 8080。
+> 若 80 端口可用,可将 `docker/docker-compose.yml` 中 nginx 的端口改回 `"80:80"`。
 
 停止:
 
