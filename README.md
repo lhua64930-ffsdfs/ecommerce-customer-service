@@ -3,8 +3,7 @@
 基于 **FastAPI + React + MySQL + Redis + Milvus + LLM + RAG** 的电商智能客服系统。
 支持意图识别、情感分析、知识库检索增强、Agent 工具调用、转人工与数据分析看板。
 
-> 本项目依据《电商智能客服项目.md》落地实现。前端技术栈按需求由 Vue 3 调整为 **React 18**;
-> 其余架构与文档保持一致。
+> 前端技术栈为 **React 18**（由 Vue 3 方案调整而来），其余架构保持一致。
 
 ## 功能
 
@@ -225,9 +224,9 @@ python scripts/import_knowledge.py --file ../knowledge_base/faqs.json
 python scripts/init_vector_db.py
 ```
 
-## 与原始项目文档的差异
+## 与原始方案的差异
 
-| 项 | 文档 | 本项目 | 原因 |
+| 项 | 原始方案 | 本项目 | 原因 |
 | --- | --- | --- | --- |
 | 前端 | Vue 3 + Element Plus + Pinia | React 18 + Ant Design + Zustand | 需求方指定 |
 | Milvus | v2.3.3 | v2.5.4 | pymilvus 2.3 不支持 Python 3.13 |
