@@ -30,7 +30,7 @@ export default function AppLayout() {
       <Sider className="app-sider" breakpoint="lg" collapsedWidth={0} width={200}>
         <div className="app-logo">
           <span className="app-logo-icon">🤖</span>
-          <span>智能客服</span>
+          <span>售后智答</span>
         </div>
         <Menu
           mode="inline"

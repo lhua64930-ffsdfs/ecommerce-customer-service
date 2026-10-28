@@ -1,7 +1,7 @@
 [project]
 name = "ecommerce-customer-service-backend"
 version = "1.0.0"
-description = "电商智能客服系统后端 - FastAPI + LLM + RAG + NLU"
+description = "售后智答后端 - FastAPI + LLM + RAG + NLU"
 requires-python = ">=3.10"
 
 [tool.pytest.ini_options]

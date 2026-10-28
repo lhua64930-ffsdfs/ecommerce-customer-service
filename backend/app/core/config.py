@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     """全局配置项(字段名与环境变量名一致,大小写不敏感)。"""
 
     # ---------- 应用 ----------
-    PROJECT_NAME: str = "电商智能客服系统"
+    PROJECT_NAME: str = "售后智答"
     VERSION: str = "1.0.0"
     DEBUG: bool = True
     API_V1_PREFIX: str = "/api/v1"

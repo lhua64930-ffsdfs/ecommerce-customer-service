@@ -40,7 +40,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
-    description="电商智能客服系统 API",
+    description="售后智答 API",
     lifespan=lifespan,
 )
 
@@ -63,7 +63,7 @@ app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["数据�
 
 @app.get("/")
 async def root() -> dict:
-    return {"message": "电商智能客服系统 API", "version": settings.VERSION}
+    return {"message": "售后智答 API", "version": settings.VERSION}
 
 
 @app.get("/health")

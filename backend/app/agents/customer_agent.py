@@ -24,7 +24,7 @@ from app.utils.logger import logger
 
 
 class CustomerServiceAgent(BaseAgent):
-    """电商智能客服 Agent。"""
+    """售后智答 Agent。"""
 
     # 简单敏感词过滤(示例列表,可按业务扩充)
     SENSITIVE_WORDS = ("傻逼", "操你", "滚蛋", "fuck", "shit")

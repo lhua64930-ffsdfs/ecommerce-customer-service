@@ -1,6 +1,6 @@
-# 电商智能客服系统(E-Commerce Intelligent Customer Service Agent)
+# 售后智答(After-Sales Intelligent Q&A Platform)
 
-基于 **FastAPI + React + MySQL + Redis + Milvus + LLM + RAG** 的电商智能客服系统。
+基于 **FastAPI + React + MySQL + Redis + Milvus + LLM + RAG** 的售后智答平台。
 支持意图识别、情感分析、知识库检索增强、Agent 工具调用、转人工与数据分析看板。
 
 > 前端技术栈为 **React 18**（由 Vue 3 方案调整而来），其余架构保持一致。
