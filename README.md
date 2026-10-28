@@ -40,7 +40,7 @@
 ## 目录结构
 
 ```text
-ecommerce-customer-service/
+after-sales-qa/
 ├── backend/
 │   ├── app/
 │   │   ├── api/v1/          # 对话、意图、Agent、知识库、订单、商品、分析接口
