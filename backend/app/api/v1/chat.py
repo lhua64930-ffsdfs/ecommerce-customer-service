@@ -10,7 +10,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.customer_agent import CustomerServiceAgent
-from app.api.deps import get_db
+from app.agents.graph.multi_step_agent import MultiStepAgent
+from app.api.deps import get_db, get_multi_step_agent
 from app.core.config import settings
 from app.models.intent import Intent
 from app.models.message import Message
@@ -94,7 +95,9 @@ async def create_session(
 
 @router.post("/send", response_model=SendMessageResponse, summary="发送消息")
 async def send_message(
-    payload: SendMessageRequest, db: AsyncSession = Depends(get_db)
+    payload: SendMessageRequest,
+    db: AsyncSession = Depends(get_db),
+    multi_step_agent: MultiStepAgent | None = Depends(get_multi_step_agent),
 ) -> SendMessageResponse:
     # 限流:同一会话每分钟最多 N 条
     count = await incr_with_ttl(f"rate:chat:{payload.session_id}", 60)
@@ -147,6 +150,7 @@ async def send_message(
         user_id=user_id,
         db=db,
         history=history,
+        multi_step_agent=multi_step_agent,
     )
     agent_result = await agent.chat(payload.content)
 
@@ -170,6 +174,7 @@ async def send_message(
             "tool_calls": agent_result.get("tool_calls", []),
             "handler_type": intent_data.get("handler_type"),
             "entities": intent_data.get("entities", []),
+            "agent_mode": agent_result.get("agent_mode"),
         },
     )
     db.add(bot_message)
@@ -191,6 +196,7 @@ async def send_message(
         need_transfer=agent_result["need_transfer"],
         message_id=bot_message.id,
         tool_calls=agent_result.get("tool_calls", []),
+        agent_mode=agent_result.get("agent_mode", "single_step"),
     )
 
 

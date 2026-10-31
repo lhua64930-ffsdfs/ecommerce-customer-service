@@ -80,9 +80,18 @@
   "quick_replies": ["查看全部订单", "物流到哪了", "转人工"],
   "need_transfer": false,
   "message_id": 42,
-  "tool_calls": [{ "tool": "query_order", "success": true }]
+  "tool_calls": [{ "tool": "query_order", "success": true }],
+  "agent_mode": "multi_step"
 }
 ```
+
+`agent_mode` 表示本次请求实际使用的处理路径:
+
+| 值 | 含义 |
+| --- | --- |
+| `multi_step` | 订单查询由 LangGraph 多步 Agent(模型 ↔ 工具,最多 5 步)完成 |
+| `single_step` | 既有单步路由(转人工 / 工具 / RAG / LLM) |
+| `single_step_fallback` | 多步图不可用、执行失败、超步数或空结果时,自动回退单步路由 |
 
 ### GET /api/v1/chat/history
 

@@ -56,6 +56,7 @@ export interface SendMessageResponse {
   need_transfer: boolean
   message_id: number | null
   tool_calls: ToolCall[]
+  agent_mode: 'multi_step' | 'single_step' | 'single_step_fallback'
 }
 
 export interface HistoryMessage {

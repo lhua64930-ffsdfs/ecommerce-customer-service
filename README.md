@@ -12,6 +12,7 @@
 - **情感分析**:词典 + 规则,负向情绪安抚并自动转人工
 - **RAG 知识库**:本地 BGE 中文向量模型 + Milvus 语义检索,失败自动降级关键词检索
 - **Agent 工具集**:知识检索、订单查询、商品查询、退款/取消、转人工、创建工单
+- **多步 Agent**:LangGraph 模型节点 + 工具节点 + 条件边(最多 5 步),订单查询优先走图;失败自动回退单步路由,响应通过 `agent_mode` 标记实际路径
 - **业务安全**:订单查询校验归属,防止越权查看他人订单
 - **数据看板**:会话/消息/AI 解决率/转人工率/满意度,意图与情感分布
 - **知识库管理**:增删改查 + 语义检索,变更自动重建向量
@@ -34,7 +35,7 @@
 | 前端 | React 18、TypeScript、Vite、Ant Design 5、Zustand、axios、ECharts |
 | 后端 | FastAPI、SQLAlchemy 2(async)、Pydantic 2、loguru |
 | 数据 | MySQL 8、Redis 7、Milvus 2.5(本地存储模式) |
-| AI | DeepSeek(OpenAI 兼容)、sentence-transformers(BGE 中文向量) |
+| AI | DeepSeek(OpenAI 兼容)、LangGraph + LangChain、sentence-transformers(BGE 中文向量) |
 | 测试 | pytest、pytest-asyncio、Playwright |
 
 ## 目录结构
@@ -44,7 +45,7 @@ after-sales-qa/
 ├── backend/
 │   ├── app/
 │   │   ├── api/v1/          # 对话、意图、Agent、知识库、订单、商品、分析接口
-│   │   ├── agents/          # Agent 基类、客服 Agent、6 个工具、提示词
+│   │   ├── agents/          # Agent 基类、客服 Agent、6 个工具、LangGraph 多步图
 │   │   ├── core/            # 配置、数据库、种子数据、YAML 加载器
 │   │   ├── models/          # 8 张表的 ORM 模型
 │   │   ├── schemas/         # Pydantic 模型
@@ -142,7 +143,8 @@ cd backend
 pytest -q
 ```
 
-覆盖:情感规则、意图与实体抽取、对话全链路、订单越权校验。
+覆盖:情感规则、意图与实体抽取、对话全链路、订单越权校验、
+LangGraph 单工具路径与 fallback(脚本化 Fake ChatModel,不访问真实 DeepSeek)。
 
 ### 浏览器冒烟测试
 
@@ -236,6 +238,7 @@ python scripts/init_vector_db.py
 | 情感分析 | 示例规则 | 修复否定词跨句、感叹号方向等 bug | 示例代码存在逻辑错误 |
 | 订单工具 | 模拟数据 | 真实 MySQL + 归属校验 | 修复 IDOR 越权风险 |
 | 商品/订单工具 | 硬编码 mock | 查询数据库种子数据 | 可演示真实链路 |
+| Agent 编排 | 单步路由 | LangGraph 多步主路径 + 单步 fallback | 展示多步工具调用且保留稳定兜底 |
 
 ## 已知限制
 

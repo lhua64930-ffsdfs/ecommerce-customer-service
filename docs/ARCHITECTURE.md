@@ -11,6 +11,8 @@ FastAPI ── Chat API
         ├─ 情感分析 ──────────────► SentimentService
         ├─ 意图识别 ──────────────► IntentService(规则 + LLM)
         ├─ 路由
+        │    ├─ 订单查询 → LangGraph 多步 Agent(model ↔ tools,≤5 步)→ 现有工具
+        │    │              └─ 失败 / 超步数 / 空结果 → 单步 fallback
         │    ├─ transfer → TransferHumanTool → Redis 队列 + sessions.status
         │    ├─ tool     → QueryOrder / QueryProduct / Refund / CreateTicket → MySQL
         │    ├─ rag      → RAGService → EmbeddingService → Milvus
@@ -37,7 +39,10 @@ FastAPI ── Chat API
    - 清洗文本、替换敏感词;
    - 情感分析 → `positive / neutral / negative`;
    - 意图识别 → 关键词与 LLM 融合,抽取实体;
-   - 按 `handler_type` 路由:转人工 / 工具 / RAG / 纯 LLM;
+   - 订单查询优先交给 LangGraph 多步 Agent:模型节点决定调用哪个工具,
+     工具节点执行现有工具并回传 Observation,条件边决定继续或结束,最多 5 步;
+   - 图不可用、执行失败、超步数、空回复或没有工具结果时,回退到既有单步路由;
+   - 其余意图仍按 `handler_type` 路由:转人工 / 工具 / RAG / 纯 LLM;
    - 负向情绪自动添加安抚前缀。
 5. 保存机器人回复(意图、置信度、情感、工具调用记录)。
 6. 更新会话状态、消息数、最后消息时间。
@@ -56,6 +61,10 @@ FastAPI ── Chat API
 意图 → 工具映射在 `CustomerServiceAgent._handle_with_tools()`:
 `order_query → query_order`、`cancel_order/refund_request → refund`、
 `order_modify → create_ticket`、`complaint/human_agent → transfer_human`。
+
+多步路径通过 `app/agents/graph/tool_adapters.py` 把同一批工具包装成
+LangChain `StructuredTool`,工具内部逻辑不变;ChatModel 与图均通过依赖注入提供,
+测试使用脚本化 Fake ChatModel,不会访问真实 DeepSeek。
 
 ## 5. RAG 链路
 
@@ -79,6 +88,7 @@ FastAPI ── Chat API
 | 统一数据库事务 | 知识条目与向量主键同源,避免双写不一致 |
 | 工具接收 `AsyncSession` | 同一次请求复用一个连接,避免连接爆炸 |
 | 失败降级 | LLM/RAG/Redis 任一故障不阻断主流程 |
+| 多步 Agent 主路径 + 单步 fallback | 展示 LangGraph 多步工具调用,同时保留稳定可演示的兜底路径 |
 
 ## 7. 已知演进方向
 

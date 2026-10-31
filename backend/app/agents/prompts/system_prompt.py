@@ -68,6 +68,22 @@ def get_react_prompt() -> str:
 """
 
 
+def get_multi_step_system_prompt() -> str:
+    """多步 Agent 的系统提示词:角色 + 工具使用约束。"""
+    return (
+        get_system_prompt()
+        + "\n\n"
+        + get_react_prompt()
+        + """
+## 多步执行约束
+- 最多 5 步,用尽量少的工具调用完成用户请求。
+- 用户提供订单号时,必须调用 query_order 获取真实订单状态,不得编造订单信息。
+- 只调用与当前请求相关的工具;工具失败时如实说明,不要假装成功。
+- 拿到工具结果后,用简洁的中文直接回复用户,不要暴露内部推理过程。
+"""
+    )
+
+
 def get_sentiment_prompt() -> str:
     """情感分析提示词(供 LLM 模式使用)。"""
     return """分析用户消息的情感倾向,返回 JSON:

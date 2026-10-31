@@ -1,7 +1,7 @@
 """对话相关 Schema(照文档定义)。"""
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -77,6 +77,10 @@ class SendMessageResponse(BaseModel):
     need_transfer: bool = Field(False, description="是否需要转人工")
     message_id: int | None = Field(None, description="机器人消息ID")
     tool_calls: list[dict[str, Any]] = Field(default_factory=list, description="工具调用记录")
+    agent_mode: Literal["multi_step", "single_step", "single_step_fallback"] = Field(
+        "single_step",
+        description="本次处理路径:multi_step / single_step / single_step_fallback",
+    )
 
 
 class SessionInfo(BaseModel):
