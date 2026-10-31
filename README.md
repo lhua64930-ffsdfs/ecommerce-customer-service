@@ -4,6 +4,9 @@
 支持意图识别、情感分析、知识库检索增强、Agent 工具调用、转人工与数据分析看板。
 
 > 前端技术栈为 **React 18**（由 Vue 3 方案调整而来），其余架构保持一致。
+>
+> 面向 AI/LLM 应用工程师实习的作品集项目。面试材料:
+> [可复现演示脚本](docs/DEMO.md) · [ADR-0001](docs/adr/0001-langgraph-primary-agent.md)。
 
 ## 功能
 
@@ -17,6 +20,34 @@
 - **数据看板**:会话/消息/AI 解决率/转人工率/满意度,意图与情感分布
 - **知识库管理**:增删改查 + 语义检索,变更自动重建向量
 - **会话记录**:历史会话列表与完整对话回放
+
+## 项目亮点
+
+- **多步 Agent 可演示**:LangGraph 模型节点 + 工具节点 + 条件边,
+  模型自主决定调用哪个工具,单请求最多 5 步。
+- **Agent Fallback 可观测**:图失败、超步数、空结果或 LLM 不可用时自动回退单步 Agent,
+  响应用 `agent_mode` 区分 `multi_step` / `single_step` / `single_step_fallback`。
+- **真实数据链路**:8 张 MySQL 表 + Redis + Milvus,不是前端 mock;
+  订单查询在工具层校验归属。
+- **RAG 可降级**:本地 BGE 中文向量 + Milvus COSINE 检索,
+  向量库/Embedding 不可用时自动回退关键词 + bigram 检索。
+- **测试不碰真实 LLM**:21 个 pytest,HTTP 主接缝 + 脚本化 Fake ChatModel。
+- **一键复现**:Docker Compose 覆盖 MySQL / Redis / Milvus / 后端 / 前端 / Nginx。
+
+## 当前进度
+
+| 能力 | 状态 |
+| --- | --- |
+| 单步 Agent / RAG / 转人工 / 数据看板 / 知识库 | ✅ 已完成 |
+| LangGraph 多步 Agent(订单查询)+ Agent Fallback | ✅ T1 |
+| 复合任务(查订单 → 取消/退货) | 🚧 T2 |
+| RAG 结构化引用(citations) | 🚧 T3 |
+| RAG 评测集 + Recall@1/3/5 | 🚧 T4 |
+| 限流修复 + PII 脱敏 | 🚧 T5 |
+| 演示 GIF / 新截图 | 🚧 T6 |
+
+> 未完成项在 [已知限制](#已知限制) 中有说明。
+> 面试时请如实区分「已实现 / 已验证 / 计划中」,不要虚报评测指标。
 
 ## 界面预览
 
@@ -37,6 +68,34 @@
 | 数据 | MySQL 8、Redis 7、Milvus 2.5(本地存储模式) |
 | AI | DeepSeek(OpenAI 兼容)、LangGraph + LangChain、sentence-transformers(BGE 中文向量) |
 | 测试 | pytest、pytest-asyncio、Playwright |
+
+## 架构
+
+```mermaid
+flowchart LR
+    U[用户] --> FE[React 18 + Ant Design]
+    FE -->|HTTP /api/v1| API[FastAPI]
+    API --> PRE[预处理 / 情感 / 意图]
+    PRE --> ROUTE{意图路由}
+    ROUTE -->|order_query| GRAPH[LangGraph 多步 Agent<br/>模型 ↔ 工具 ≤ 5 步]
+    GRAPH -->|成功| TOOLS[6 个工具适配层]
+    GRAPH -->|失败 / 空结果 / 超步数| SINGLE[单步 Agent]
+    ROUTE -->|其他意图| SINGLE
+    SINGLE --> TOOLS
+    SINGLE --> RAG[RAGService]
+    TOOLS --> DB[(MySQL)]
+    TOOLS --> REDIS[(Redis)]
+    RAG --> MILVUS[(Milvus)]
+    API --> MSG[(messages / sessions)]
+
+    classDef store fill:#f5f5f5,stroke:#999;
+    class DB,REDIS,MILVUS,MSG store;
+```
+
+> 一次完整请求的链路、单步/多步对比与模块职责见
+> [ARCHITECTURE.md](docs/ARCHITECTURE.md);
+> LangGraph 主路径与 fallback 的决策背景见
+> [ADR-0001](docs/adr/0001-langgraph-primary-agent.md)。
 
 ## 目录结构
 
@@ -65,7 +124,7 @@ after-sales-qa/
 ├── config/                  # LLM / 意图 / RAG / Agent 业务配置
 ├── knowledge_base/          # 知识库 JSON
 ├── docker/                  # 开发与生产 compose、Dockerfile、nginx
-└── docs/                    # 架构 / API / 数据库 / 部署文档
+└── docs/                    # 架构 / API / 数据库 / 部署 / 面试材料 / ADR
 ```
 
 ## 快速开始(开发模式)
@@ -136,15 +195,20 @@ LLM_MODEL=deepseek-chat
 
 ### 后端 pytest
 
-需要基础设施容器运行(测试使用真实 MySQL/Redis/Milvus)。
+需要基础设施容器运行(测试使用真实 MySQL/Redis/Milvus)。当前 **21 个测试**:
 
 ```bash
 cd backend
-pytest -q
+./venv/Scripts/python.exe -m pytest -q
 ```
 
-覆盖:情感规则、意图与实体抽取、对话全链路、订单越权校验、
-LangGraph 单工具路径与 fallback(脚本化 Fake ChatModel,不访问真实 DeepSeek)。
+覆盖:
+
+- 服务单测:情感规则、意图与实体抽取;
+- 图单测:单工具路径、图失败、空回复、无工具结果、5 步上限、历史传递;
+- API 集成:多步订单查询、强制图失败 fallback、图内转人工 `need_transfer`、订单越权校验;
+- 测试通过 FastAPI `dependency_overrides` 注入脚本化 Fake ChatModel,
+  并强制 `LLMService` 进入 mock,不会访问真实 DeepSeek。
 
 ### 浏览器冒烟测试
 
@@ -159,7 +223,8 @@ node scripts/smoke.mjs
 
 ## Docker 整体部署
 
-密钥只从环境变量注入,**不要写入 `.env` 或 compose 文件**。
+Docker 部署时密钥只从环境变量注入,不要提交到仓库或写进 compose 文件。
+开发模式可以放在已被 `.gitignore` 忽略的 `backend/.env`。
 如果 Key 存放在 `DEEPSEEK_API_KEY` 中,启动时映射给 compose 读取的 `LLM_API_KEY`:
 
 ```bash
@@ -242,18 +307,36 @@ python scripts/init_vector_db.py
 
 ## 已知限制
 
-- 未实现登录/JWT 鉴权:当前以会话绑定用户身份,订单工具会校验归属;生产部署前建议补认证。
-- 情感分析为词典+规则实现,可替换为模型以获得更高准确率。
-- 意图语义匹配目前由关键词 + LLM 承担,可扩展为意图向量召回。
+> 这一节是面试时主动讲边界的地方:已知问题 + 影响 + 计划,比「没有 bug」更可信。
+
+- **多步 Agent 目前只接入 `order_query`**:复合任务(查订单 → 取消/退货)还在 T2;
+  写操作暂时留在单步路径,避免 fallback 重复执行副作用。
+- **RAG 还没有结构化引用与评测**:聊天回答基于检索上下文,但未返回 `citations`;
+  知识库只有 12 条种子条目,Recall@1/3/5 评测集在 T4。不要虚报召回率。
+- **限流实现有已知缺陷**:当前是 `INCR + EXPIRE`,每次请求刷新 TTL,
+  持续流量下计数可能永不过期,达到上限后会永久 429;计划 T5 改为分钟桶/滑动窗口。
+- **订单 PII 未脱敏**:订单详情仍展示完整手机号/地址,T5 计划做 `mask_phone`/`mask_address`;
+  仓库内演示数据均为虚构种子。
+- **无 JWT/RBAC**:当前以会话绑定用户身份,订单工具校验归属;
+  生产部署前需要补认证、鉴权与审计。
+- **无可观测性**:只有 loguru 日志 + message metadata(意图、情感、工具调用、`agent_mode`);
+  没有 Tracing、延迟/token/成本指标。
+- **无 CI/压测**:测试与构建本地通过,但没有 CI 流水线和生产级性能数据。
+- **图每次请求编译**:`MultiStepAgent` 按请求构建并编译图,可缓存优化。
+- **SSE 流式输出未实现**:当前一次性返回完整回复。
+- 情感分析为词典 + 规则,可替换为模型;意图可扩展为向量召回。
 - 前端构建产物约 2.2MB(antd + echarts),可按路由做代码分割。
 - `Base.metadata.create_all` 用于开发期建表,生产建议引入 Alembic 迁移。
 
 ## 相关文档
 
+- [可复现演示脚本](docs/DEMO.md):3 分钟演示、curl 命令、预期 `agent_mode`、排障
 - [架构设计](docs/ARCHITECTURE.md)
 - [API 规范](docs/API_SPEC.md)
 - [数据库设计](docs/DATABASE_SCHEMA.md)
 - [部署指南](docs/DEPLOYMENT.md)
+- [ADR-0001:LangGraph 主路径 + Agent Fallback](docs/adr/0001-langgraph-primary-agent.md)
+- [领域术语](CONTEXT.md)
 
 ## 许可证
 
