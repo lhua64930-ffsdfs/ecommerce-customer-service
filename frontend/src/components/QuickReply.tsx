@@ -1,5 +1,3 @@
-import { Button } from 'antd'
-
 interface Props {
   replies: string[]
   onSelect: (text: string) => void
@@ -10,12 +8,21 @@ export default function QuickReply({ replies, onSelect }: Props) {
 
   return (
     <div className="quick-reply">
-      <div className="quick-reply-title">💡 您可能想了解:</div>
+      <div className="quick-reply-head">
+        <span className="quick-reply-title">常用处理</span>
+        <span className="quick-reply-kicker">QUICK ACTIONS</span>
+      </div>
       <div className="quick-reply-list">
         {replies.map((reply, index) => (
-          <Button key={`${reply}-${index}`} size="small" onClick={() => onSelect(reply)}>
-            {reply}
-          </Button>
+          <button
+            key={`${reply}-${index}`}
+            type="button"
+            className="quick-reply-item"
+            onClick={() => onSelect(reply)}
+          >
+            <span>{reply}</span>
+            <span aria-hidden="true">→</span>
+          </button>
         ))}
       </div>
     </div>

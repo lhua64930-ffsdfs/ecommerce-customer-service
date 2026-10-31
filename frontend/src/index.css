@@ -2,6 +2,24 @@
   box-sizing: border-box;
 }
 
+:root {
+  /* 售后受理台色板:暖纸、墨色、印章红、核验绿 */
+  --ink: #1c2b33;
+  --paper: #f6f2e9;
+  --paper-raised: #fcfaf5;
+  --paper-deep: #e9e3d7;
+  --stamp: #c84b31;
+  --stamp-deep: #a33a24;
+  --verified: #2f6f5e;
+  --rule: #d8d2c4;
+  --muted: #7a7468;
+  --gold: #b9892f;
+
+  --font-sans: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-serif: 'Songti SC', 'STSong', 'SimSun', serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Consolas, monospace;
+}
+
 html,
 body,
 #root {
@@ -10,12 +28,15 @@ body,
 
 body {
   margin: 0;
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
-    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
-  color: #1f2329;
-  background: #eef1f7;
+  color: var(--ink);
+  background: var(--paper-deep);
+}
+
+::selection {
+  background: var(--stamp);
+  color: var(--paper-raised);
 }
 
 ::-webkit-scrollbar {
@@ -23,7 +44,7 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d5d8e0;
+  background: #c7bfae;
   border-radius: 3px;
 }
 

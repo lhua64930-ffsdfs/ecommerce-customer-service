@@ -19,26 +19,35 @@ export default function InputBox({ disabled, onSend }: Props) {
 
   return (
     <div className="chat-input">
-      <Input.TextArea
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-        autoSize={{ minRows: 1, maxRows: 4 }}
-        placeholder="输入您的问题...(Enter 发送,Shift+Enter 换行)"
-        onPressEnter={(event) => {
-          if (!event.shiftKey) {
-            event.preventDefault()
-            submit()
-          }
-        }}
-      />
-      <Button
-        type="primary"
-        icon={<SendOutlined />}
-        onClick={submit}
-        disabled={disabled || !text.trim()}
-      >
-        发送
-      </Button>
+      <div className="composer-head">
+        <span className="composer-label">MESSAGE / 受理记录</span>
+        <span className="composer-hint">Enter 提交 · Shift + Enter 换行</span>
+      </div>
+
+      <div className="composer-row">
+        <Input.TextArea
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+          autoSize={{ minRows: 1, maxRows: 4 }}
+          placeholder="输入订单号或问题,例如:查订单 ORDER20260401001"
+          onPressEnter={(event) => {
+            if (!event.shiftKey) {
+              event.preventDefault()
+              submit()
+            }
+          }}
+        />
+        <Button
+          type="primary"
+          className="send-button"
+          aria-label="提交"
+          icon={<SendOutlined />}
+          onClick={submit}
+          disabled={disabled || !text.trim()}
+        >
+          提交
+        </Button>
+      </div>
     </div>
   )
 }

@@ -29,7 +29,9 @@ export default function AppLayout() {
     <Layout className="app-layout">
       <Sider className="app-sider" breakpoint="lg" collapsedWidth={0} width={200}>
         <div className="app-logo">
-          <span className="app-logo-icon">🤖</span>
+          <span className="app-logo-mark" aria-hidden="true">
+            售
+          </span>
           <span>售后智答</span>
         </div>
         <Menu
