@@ -41,7 +41,7 @@ FastAPI ── Chat API
    - 意图识别 → 关键词与 LLM 融合,抽取实体;
    - 订单查询优先交给 LangGraph 多步 Agent:模型节点决定调用哪个工具,
      工具节点执行现有工具并回传 Observation,条件边决定继续或结束,最多 5 步;
-   - 图不可用、执行失败、超步数、空回复或没有工具结果时,回退到既有单步路由;
+   - 图不可用、执行失败、超步数、空回复或没有工具结果时,回退到既有单步 Agent(Agent Fallback);
    - 其余意图仍按 `handler_type` 路由:转人工 / 工具 / RAG / 纯 LLM;
    - 负向情绪自动添加安抚前缀。
 5. 保存机器人回复(意图、置信度、情感、工具调用记录)。
@@ -65,6 +65,9 @@ FastAPI ── Chat API
 多步路径通过 `app/agents/graph/tool_adapters.py` 把同一批工具包装成
 LangChain `StructuredTool`,工具内部逻辑不变;ChatModel 与图均通过依赖注入提供,
 测试使用脚本化 Fake ChatModel,不会访问真实 DeepSeek。
+
+当前阶段只有 `order_query` 意图接入多步图,其余意图保持单步 Agent,以便先验证
+工具适配与 fallback 链路;这与 ADR-0001 的渐进接入方向一致,后续 ticket 再扩展。
 
 ## 5. RAG 链路
 

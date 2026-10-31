@@ -54,6 +54,14 @@ def _args_schema(tool_name: str, schema: dict[str, Any]) -> type:
     return create_model(model_name, **fields)
 
 
+def tool_error_payload(tool_name: str, exc: Exception) -> dict[str, Any]:
+    """工具失败时的统一 Observation 结构。"""
+    return {
+        "success": False,
+        "response": f"工具 {tool_name} 执行失败: {exc}",
+    }
+
+
 def build_lc_tools(
     tools: dict[str, Any], context: ToolContext
 ) -> list[StructuredTool]:
@@ -71,10 +79,7 @@ def build_lc_tools(
             try:
                 result = await _tool.execute(context.tool_params(**kwargs))
             except Exception as exc:  # noqa: BLE001 - 工具异常交给模型判断下一步
-                result = {
-                    "success": False,
-                    "response": f"工具 {_name} 执行失败: {exc}",
-                }
+                result = tool_error_payload(_name, exc)
             context.record_tool_call(_name, result)
             return json.dumps(result, ensure_ascii=False, default=str)
 

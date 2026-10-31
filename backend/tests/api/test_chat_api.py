@@ -106,6 +106,41 @@ async def test_order_query_uses_multi_step_agent(client: httpx.AsyncClient) -> N
     assert "ORDER20260401001" in data["response"]
 
 
+async def test_multi_step_transfer_propagates_need_transfer(
+    client: httpx.AsyncClient,
+) -> None:
+    """图内调用 transfer_human 时,响应 need_transfer 必须为真。"""
+    app.dependency_overrides[get_chat_model] = lambda: ScriptedChatModel(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "transfer_human",
+                        "args": {"reason": "用户主动请求"},
+                        "id": "call_1",
+                    }
+                ],
+            ),
+            AIMessage(content="已为您转接人工客服,请稍候。"),
+        ]
+    )
+
+    session_response = await client.post("/api/v1/chat/session", json={})
+    session_id = session_response.json()["session"]["session_id"]
+
+    response = await client.post(
+        "/api/v1/chat/send",
+        json={"session_id": session_id, "content": "查订单 ORDER20260401001"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["agent_mode"] == "multi_step"
+    assert data["need_transfer"] is True
+    assert data["tool_calls"] == [{"tool": "transfer_human", "success": True}]
+
+
 async def test_order_query_falls_back_when_graph_fails(
     client: httpx.AsyncClient,
 ) -> None:

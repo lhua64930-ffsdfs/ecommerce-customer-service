@@ -18,6 +18,7 @@ from app.models.message import Message
 from app.models.session import Session
 from app.models.user import User
 from app.schemas.chat import (
+    AgentMode,
     CreateSessionRequest,
     CreateSessionResponse,
     IntentInfo,
@@ -196,7 +197,7 @@ async def send_message(
         need_transfer=agent_result["need_transfer"],
         message_id=bot_message.id,
         tool_calls=agent_result.get("tool_calls", []),
-        agent_mode=agent_result.get("agent_mode", "single_step"),
+        agent_mode=agent_result.get("agent_mode", AgentMode.SINGLE_STEP.value),
     )
 
 

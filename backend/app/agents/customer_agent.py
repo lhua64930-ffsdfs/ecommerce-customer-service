@@ -6,14 +6,10 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.base_agent import BaseAgent
-from app.agents.graph.multi_step_agent import (
-    AGENT_MODE_MULTI_STEP,
-    AGENT_MODE_SINGLE_STEP,
-    AGENT_MODE_SINGLE_STEP_FALLBACK,
-    MultiStepAgent,
-)
+from app.agents.graph.multi_step_agent import MultiStepAgent
 from app.agents.prompts.system_prompt import get_system_prompt
 from app.agents.tools.factory import build_default_tools
+from app.schemas.chat import AgentMode
 from app.schemas.intent import IntentResult
 from app.services.intent_service import IntentService
 from app.services.llm_service import LLMError, LLMService
@@ -28,7 +24,8 @@ class CustomerServiceAgent(BaseAgent):
     # 简单敏感词过滤(示例列表,可按业务扩充)
     SENSITIVE_WORDS = ("傻逼", "操你", "滚蛋", "fuck", "shit")
 
-    # 当前阶段交给 LangGraph 的意图;其余仍走单步路由,避免行为回归
+    # T1 只把订单查询接入图,其余意图仍走单步 Agent;后续 ticket 逐步扩展。
+    # 与 ADR-0001 的长期方向一致,当前阶段是渐进接入而非完全替换。
     MULTI_STEP_INTENTS = frozenset({"order_query"})
 
     def __init__(
@@ -60,13 +57,13 @@ class CustomerServiceAgent(BaseAgent):
 
         tool_calls: list[dict[str, Any]] = []
         need_transfer = False
-        agent_mode = AGENT_MODE_SINGLE_STEP
+        agent_mode = AgentMode.SINGLE_STEP
         response: str | None = None
 
-        # 订单查询优先走 LangGraph;图不可用或失败时回退单步路由
+        # 订单查询优先走 LangGraph;图不可用或失败时回退单步 Agent
         if self._should_try_multi_step(intent):
             if self.multi_step_agent is None:
-                agent_mode = AGENT_MODE_SINGLE_STEP_FALLBACK
+                agent_mode = AgentMode.SINGLE_STEP_FALLBACK
             else:
                 try:
                     multi_result = await self.multi_step_agent.run(
@@ -77,23 +74,23 @@ class CustomerServiceAgent(BaseAgent):
                         session_id=self.session_id,
                     )
                 except Exception as exc:  # noqa: BLE001 - 回退是预期路径
-                    logger.warning("多步 Agent 失败,回退单步路由: {}", exc)
-                    agent_mode = AGENT_MODE_SINGLE_STEP_FALLBACK
+                    logger.warning("多步 Agent 失败,回退单步 Agent(Agent Fallback): {}", exc)
+                    agent_mode = AgentMode.SINGLE_STEP_FALLBACK
                 else:
                     response = multi_result.response
                     tool_calls = list(multi_result.tool_calls)
-                    agent_mode = AGENT_MODE_MULTI_STEP
+                    agent_mode = AgentMode.MULTI_STEP
+                    need_transfer = any(
+                        call.get("tool") == "transfer_human"
+                        and call.get("success")
+                        for call in tool_calls
+                    )
 
         if response is None:
             try:
                 if intent.handler_type == "transfer":
                     result = await self.tools["transfer_human"].execute(
-                        {
-                            "db": self.db,
-                            "session_id": self.session_id,
-                            "user_id": self.user_id,
-                            "user_message": message,
-                        }
+                        self._tool_params(message)
                     )
                     response = result.get("response", "已为您转接人工客服")
                     need_transfer = bool(result.get("success"))
@@ -127,7 +124,7 @@ class CustomerServiceAgent(BaseAgent):
             "quick_replies": self._quick_replies(intent),
             "need_transfer": need_transfer,
             "tool_calls": tool_calls,
-            "agent_mode": agent_mode,
+            "agent_mode": agent_mode.value,
         }
 
     def _should_try_multi_step(self, intent: IntentResult) -> bool:
@@ -135,6 +132,16 @@ class CustomerServiceAgent(BaseAgent):
             intent.handler_type == "tool"
             and intent.intent_code in self.MULTI_STEP_INTENTS
         )
+
+    def _tool_params(self, message: str, **extra: Any) -> dict[str, Any]:
+        """单步工具调用的公共参数,避免在每个分支重复拼装。"""
+        return {
+            "db": self.db,
+            "user_id": self.user_id,
+            "session_id": self.session_id,
+            "user_message": message,
+            **extra,
+        }
 
     # ---------------- 路由处理 ----------------
     async def _handle_with_tools(
@@ -156,16 +163,9 @@ class CustomerServiceAgent(BaseAgent):
         order_no = next(
             (entity.value for entity in intent.entities if entity.type == "order_no"), None
         )
-        params: dict[str, Any] = {
-            "db": self.db,
-            "user_id": self.user_id,
-            "session_id": self.session_id,
-            "user_message": message,
-            "order_no": order_no,
-            **extra,
-        }
-
-        result = await self.tools[tool_name].execute(params)
+        result = await self.tools[tool_name].execute(
+            self._tool_params(message, order_no=order_no, **extra)
+        )
         logger.info("工具调用: {} success={}", tool_name, result.get("success"))
         return result.get("response", "处理完成"), [
             {"tool": tool_name, "success": bool(result.get("success"))}

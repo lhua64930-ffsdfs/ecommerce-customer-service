@@ -7,6 +7,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from app.agents.graph.multi_step_agent import (
     MultiStepAgent,
     MultiStepEmptyResultError,
+    MultiStepExecutionError,
     MultiStepLimitError,
 )
 from tests.support.fake_chat_model import FakeOrderTool, ScriptedChatModel
@@ -56,7 +57,7 @@ async def test_graph_failure_raises_typed_error() -> None:
     model = ScriptedChatModel(fail_with="graph exploded")
     agent = MultiStepAgent(chat_model=model, tools={"query_order": FakeOrderTool()})
 
-    with pytest.raises(Exception) as exc_info:
+    with pytest.raises(MultiStepExecutionError) as exc_info:
         await agent.run(
             user_message="查订单 ORDER20260401001",
             history=[],

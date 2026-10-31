@@ -18,7 +18,7 @@ def create_chat_model() -> BaseChatModel | None:
     """创建 LangChain ChatModel;未配置 Key 或 mock 模式返回 None。"""
     api_key = (settings.LLM_API_KEY or "").strip()
     if settings.LLM_PROVIDER.lower() == "mock" or not api_key:
-        logger.debug("LLM API Key 未配置,多步 Agent 将回退单步路由")
+        logger.debug("LLM API Key 未配置,多步 Agent 将回退单步 Agent")
         return None
 
     from langchain_openai import ChatOpenAI

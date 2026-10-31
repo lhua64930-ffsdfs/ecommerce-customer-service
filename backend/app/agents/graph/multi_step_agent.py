@@ -4,7 +4,7 @@
 - 图与 ChatModel 从外部注入,测试可传脚本化 Fake ChatModel;
 - 工具复用 ``app.agents.tools`` 下的现有实现,适配层只做参数合并与结果序列化;
 - 失败、超过步数、空回复或没有产生工具结果时抛出 ``MultiStepError``,
-  由 ``CustomerServiceAgent`` 回退到单步路由。
+  由 ``CustomerServiceAgent`` 回退到单步 Agent(Agent Fallback)。
 """
 from __future__ import annotations
 
@@ -26,13 +26,9 @@ from langgraph.graph.message import add_messages
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.graph.context import ToolContext
-from app.agents.graph.tool_adapters import build_lc_tools
+from app.agents.graph.tool_adapters import build_lc_tools, tool_error_payload
 from app.agents.prompts.system_prompt import get_multi_step_system_prompt
 from app.utils.logger import logger
-
-AGENT_MODE_MULTI_STEP = "multi_step"
-AGENT_MODE_SINGLE_STEP = "single_step"
-AGENT_MODE_SINGLE_STEP_FALLBACK = "single_step_fallback"
 
 DEFAULT_MAX_STEPS = 5
 
@@ -66,7 +62,6 @@ class MultiStepResult:
 
     response: str
     tool_calls: list[dict[str, Any]]
-    steps: int
 
 
 class MultiStepAgent:
@@ -127,7 +122,6 @@ class MultiStepAgent:
         return MultiStepResult(
             response=response,
             tool_calls=list(context.tool_calls),
-            steps=int(final_state.get("steps", 0)),
         )
 
     # ---------------- 图构建 ----------------
@@ -165,8 +159,7 @@ class MultiStepAgent:
                     except Exception as exc:  # noqa: BLE001 - 让模型看到工具错误
                         logger.warning("工具 {} 执行失败: {}", name, exc)
                         content = json.dumps(
-                            {"success": False, "response": f"工具执行失败: {exc}"},
-                            ensure_ascii=False,
+                            tool_error_payload(name, exc), ensure_ascii=False
                         )
                 observations.append(
                     ToolMessage(
