@@ -51,13 +51,28 @@
 
 ## 界面预览
 
-| 智能对话 | 数据看板 |
-| --- | --- |
-| ![智能对话](docs/images/chat-order.png) | ![数据看板](docs/images/dashboard.png) |
+### 智能对话
 
-| 知识库管理 | 会话记录 |
+| 欢迎页 | 订单查询(意图 / 情感 / 工具调用) |
 | --- | --- |
-| ![知识库管理](docs/images/knowledge.png) | ![会话记录](docs/images/sessions.png) |
+| ![欢迎页](docs/images/chat-welcome.png) | ![订单查询](docs/images/chat-order.png) |
+
+| 投诉转人工(负向情感 + 排队信息) |
+| --- |
+| ![投诉转人工](docs/images/chat-transfer.png) |
+
+### 数据看板 / 知识库 / 会话记录
+
+| 数据看板 | 知识库管理 |
+| --- | --- |
+| ![数据看板](docs/images/dashboard.png) | ![知识库管理](docs/images/knowledge.png) |
+
+| 会话记录(完整对话回放) |
+| --- |
+| ![会话记录](docs/images/sessions.png) |
+
+> 截图来自本地演示数据,订单中的姓名、手机号和地址均为虚构种子数据;
+> 展示用截图已对手机号和详细地址做脱敏处理。
 
 ## 技术栈
 
