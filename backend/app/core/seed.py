@@ -236,8 +236,12 @@ async def _seed_orders(db: AsyncSession, user_id: int) -> None:
 
 
 async def _seed_knowledge(db: AsyncSession) -> list[Knowledge]:
-    total = await db.scalar(select(func.count()).select_from(Knowledge))
-    if total:
+    """幂等写入知识库:按问题去重,并补齐历史数据中缺失的条目。"""
+    try:
+        with KNOWLEDGE_FILE.open("r", encoding="utf-8") as file:
+            entries = json.load(file)
+    except (FileNotFoundError, json.JSONDecodeError) as exc:
+        logger.error("知识库文件读取失败,仅补齐已有条目的向量: {}", exc)
         return list(
             (
                 await db.execute(select(Knowledge).where(Knowledge.vector_id.is_(None)))
@@ -246,27 +250,33 @@ async def _seed_knowledge(db: AsyncSession) -> list[Knowledge]:
             .all()
         )
 
-    try:
-        with KNOWLEDGE_FILE.open("r", encoding="utf-8") as file:
-            entries = json.load(file)
-    except (FileNotFoundError, json.JSONDecodeError) as exc:
-        logger.error("知识库文件读取失败: {}", exc)
-        return []
+    existing = list((await db.execute(select(Knowledge))).scalars().all())
+    known_questions = {item.question for item in existing}
 
-    items = [
-        Knowledge(
-            category=entry.get("category", "其他"),
-            question=entry.get("question", ""),
-            answer=entry.get("answer", ""),
-            keywords=entry.get("keywords", ""),
-            embedding_model="bge-small-zh-v1.5",
+    new_items: list[Knowledge] = []
+    for entry in entries:
+        question = entry.get("question", "")
+        if question in known_questions:
+            continue
+        known_questions.add(question)
+        new_items.append(
+            Knowledge(
+                category=entry.get("category", "其他"),
+                question=question,
+                answer=entry.get("answer", ""),
+                keywords=entry.get("keywords", ""),
+                embedding_model="bge-small-zh-v1.5",
+            )
         )
-        for entry in entries
+    if new_items:
+        db.add_all(new_items)
+        await db.flush()
+        logger.info("已补齐 {} 条缺失知识库", len(new_items))
+
+    # 只返回还没有向量 id 的条目,避免每次启动重复计算
+    return [
+        item for item in existing + new_items if item.vector_id is None
     ]
-    db.add_all(items)
-    await db.flush()
-    logger.info("已写入 {} 条知识库", len(items))
-    return items
 
 
 async def _seed_vectors(db: AsyncSession, items: list[Knowledge]) -> None:

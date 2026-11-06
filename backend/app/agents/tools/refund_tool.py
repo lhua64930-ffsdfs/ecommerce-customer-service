@@ -29,7 +29,10 @@ class RefundTool:
 
     def __init__(self) -> None:
         self.name = "refund"
-        self.description = "处理退款退货申请、取消订单、查询退款进度"
+        self.description = (
+            "处理退款退货申请、取消订单、查询退款进度。"
+            "仅待支付/已支付订单可直接取消;已发货/已收货订单请使用 action=return"
+        )
         self.requires_auth = True
 
     async def execute(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -80,6 +83,20 @@ class RefundTool:
                 "response": "未找到该订单,或该订单不属于当前账号。",
             }
 
+        # 幂等:多步 Agent 失败回退单步时可能重复调用取消,重复取消不应报错
+        if order.status == "cancelled":
+            return {
+                "success": True,
+                "action": "cancel_order",
+                "order_no": order.order_no,
+                "order_status": order.status,
+                "already_cancelled": True,
+                "response": (
+                    f"订单 {order.order_no} 已经是取消状态,无需重复取消。\n\n"
+                    "退款将在 1-3 个工作日内原路退回。"
+                ),
+            }
+
         if order.status not in ("pending", "paid"):
             return {
                 "success": False,
@@ -98,6 +115,7 @@ class RefundTool:
             "success": True,
             "action": "cancel_order",
             "order_no": order.order_no,
+            "order_status": order.status,
             "response": (
                 f"✅ 已为您取消订单 {order.order_no}\n\n"
                 "支付金额将在 1-3 个工作日内原路退回。\n"
@@ -120,6 +138,20 @@ class RefundTool:
                 "response": "未找到该订单,或该订单不属于当前账号。",
             }
 
+        # 幂等:已经退款的订单重复申请时给出明确状态,不再引导重复操作
+        if action == "refund" and order.status == "refunded":
+            return {
+                "success": True,
+                "action": "refund",
+                "order_no": order.order_no,
+                "order_status": order.status,
+                "already_refunded": True,
+                "response": (
+                    f"订单 {order.order_no} 已完成退款,无需重复申请。\n\n"
+                    "如未收到款项,请联系人工客服核对支付渠道。"
+                ),
+            }
+
         if action == "return":
             response = (
                 f"📦 退货申请指引(订单 {order.order_no})\n\n"
@@ -137,7 +169,13 @@ class RefundTool:
                 "如商品已签收,请先申请退货。"
             )
 
-        return {"success": True, "action": action, "order_no": order.order_no, "response": response}
+        return {
+            "success": True,
+            "action": action,
+            "order_no": order.order_no,
+            "order_status": order.status,
+            "response": response,
+        }
 
     # ---------------- 工具方法 ----------------
     @staticmethod

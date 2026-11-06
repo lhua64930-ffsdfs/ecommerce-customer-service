@@ -17,6 +17,13 @@ export interface IntentInfo {
   priority: number
 }
 
+export interface Citation {
+  id: number
+  category: string
+  question: string
+  score: number
+}
+
 export interface Message {
   id: string
   senderType: SenderType
@@ -25,6 +32,7 @@ export interface Message {
   intent?: IntentInfo
   sentiment?: SentimentType
   sentimentScore?: number
+  citations?: Citation[]
 }
 
 export interface SessionInfo {
@@ -56,6 +64,7 @@ export interface SendMessageResponse {
   need_transfer: boolean
   message_id: number | null
   tool_calls: ToolCall[]
+  citations: Citation[]
   agent_mode: 'multi_step' | 'single_step' | 'single_step_fallback'
 }
 
@@ -68,6 +77,7 @@ export interface HistoryMessage {
   intent: IntentInfo | null
   sentiment: SentimentType | null
   sentiment_score: number | null
+  citations: Citation[]
   created_at: string
 }
 

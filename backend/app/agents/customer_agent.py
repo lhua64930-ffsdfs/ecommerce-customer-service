@@ -24,9 +24,11 @@ class CustomerServiceAgent(BaseAgent):
     # 简单敏感词过滤(示例列表,可按业务扩充)
     SENSITIVE_WORDS = ("傻逼", "操你", "滚蛋", "fuck", "shit")
 
-    # T1 只把订单查询接入图,其余意图仍走单步 Agent;后续 ticket 逐步扩展。
-    # 与 ADR-0001 的长期方向一致,当前阶段是渐进接入而非完全替换。
-    MULTI_STEP_INTENTS = frozenset({"order_query"})
+    # 订单查询与售后写操作接入多步图,支持「查订单 → 判断状态 → 取消/退货」。
+    # 其余意图(商品、促销等)仍走单步 Agent,保持链路简单。
+    MULTI_STEP_INTENTS = frozenset(
+        {"order_query", "cancel_order", "refund_request"}
+    )
 
     def __init__(
         self,
@@ -56,6 +58,7 @@ class CustomerServiceAgent(BaseAgent):
         intent = await self.intent_service.recognize(message, self.user_id)
 
         tool_calls: list[dict[str, Any]] = []
+        citations: list[dict[str, Any]] = []
         need_transfer = False
         agent_mode = AgentMode.SINGLE_STEP
         response: str | None = None
@@ -79,6 +82,7 @@ class CustomerServiceAgent(BaseAgent):
                 else:
                     response = multi_result.response
                     tool_calls = list(multi_result.tool_calls)
+                    citations = list(multi_result.citations)
                     agent_mode = AgentMode.MULTI_STEP
                     need_transfer = any(
                         call.get("tool") == "transfer_human"
@@ -100,7 +104,7 @@ class CustomerServiceAgent(BaseAgent):
                 elif intent.handler_type == "tool":
                     response, tool_calls = await self._handle_with_tools(intent, message)
                 elif intent.handler_type == "rag":
-                    response = await self._handle_with_rag(message)
+                    response, citations = await self._handle_with_rag(message)
                 else:
                     response = await self._handle_with_llm(message)
             except Exception as exc:  # noqa: BLE001 - 单条消息失败不能拖垮接口
@@ -124,6 +128,7 @@ class CustomerServiceAgent(BaseAgent):
             "quick_replies": self._quick_replies(intent),
             "need_transfer": need_transfer,
             "tool_calls": tool_calls,
+            "citations": citations,
             "agent_mode": agent_mode.value,
         }
 
@@ -171,15 +176,19 @@ class CustomerServiceAgent(BaseAgent):
             {"tool": tool_name, "success": bool(result.get("success"))}
         ]
 
-    async def _handle_with_rag(self, message: str) -> str:
-        context = await self.rag_service.retrieve(message, top_k=3)
+    async def _handle_with_rag(
+        self, message: str
+    ) -> tuple[str, list[dict[str, Any]]]:
+        context, citations = await self.rag_service.retrieve_with_citations(
+            message, top_k=3
+        )
         if not context:
-            return await self._handle_with_llm(message)
+            return await self._handle_with_llm(message), []
         try:
-            return await self.rag_service.generate(message, context)
+            return await self.rag_service.generate(message, context), citations
         except LLMError:
             # LLM 不可用时直接返回检索到的知识,保证有答案
-            return f"根据知识库:\n\n{context}"
+            return f"根据知识库:\n\n{context}", citations
 
     async def _handle_with_llm(self, message: str) -> str:
         messages = [{"role": "system", "content": get_system_prompt()}]

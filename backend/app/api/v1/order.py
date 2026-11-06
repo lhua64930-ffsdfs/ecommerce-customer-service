@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.models.order import Order
+from app.utils.pii import mask_address, mask_name, mask_phone
 
 router = APIRouter()
 
@@ -18,9 +19,9 @@ def _to_dict(order: Order) -> dict:
         "status": order.status,
         "total_amount": float(order.total_amount),
         "pay_amount": float(order.pay_amount) if order.pay_amount is not None else None,
-        "shipping_address": order.shipping_address,
-        "receiver_name": order.receiver_name,
-        "receiver_phone": order.receiver_phone,
+        "shipping_address": mask_address(order.shipping_address),
+        "receiver_name": mask_name(order.receiver_name),
+        "receiver_phone": mask_phone(order.receiver_phone),
         "tracking_no": order.tracking_no,
         "created_at": order.created_at.isoformat() if order.created_at else None,
         "paid_at": order.paid_at.isoformat() if order.paid_at else None,

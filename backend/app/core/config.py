@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     # ---------- Milvus ----------
     MILVUS_URI: str = "http://127.0.0.1:19530"
     MILVUS_COLLECTION: str = "knowledge_base"
+    # 向量检索失败后的降级冷却时间,避免每个请求都重试已宕机的 Milvus
+    RAG_VECTOR_RETRY_SECONDS: int = 30
 
     # ---------- 安全 ----------
     JWT_SECRET_KEY: str = "please-change-this-secret-in-production"

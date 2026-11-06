@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { Message } from '../types/chat'
 import { formatTime } from '../utils/formatTime'
 
@@ -9,6 +10,26 @@ const SENTIMENT_LABELS: Record<string, string> = {
 
 interface Props {
   message: Message
+}
+
+// 只识别前后为行首/行尾/空白/常见标点的 **加粗**;
+// 避免把脱敏串里的 ** 张** 138****6789 误判为 Markdown。
+const BOLD_PATTERN =
+  /(?<=^|[\s：:，,。.;；、\-—()（）])\*\*([^*\n]+?)\*\*(?=$|[\s：:，,。.;；、\-—()（）])/gm
+
+/** 轻量渲染 LLM 常用的 **加粗** 语法,其余内容保持纯文本(React 自动转义)。 */
+function renderContent(content: string): ReactNode[] {
+  const nodes: ReactNode[] = []
+  let lastIndex = 0
+
+  for (const match of content.matchAll(BOLD_PATTERN)) {
+    const index = match.index ?? 0
+    if (index > lastIndex) nodes.push(content.slice(lastIndex, index))
+    nodes.push(<strong key={`bold-${index}`}>{match[1]}</strong>)
+    lastIndex = index + match[0].length
+  }
+  if (lastIndex < content.length) nodes.push(content.slice(lastIndex))
+  return nodes
 }
 
 export default function MessageBubble({ message }: Props) {
@@ -44,8 +65,25 @@ export default function MessageBubble({ message }: Props) {
         )}
 
         <div className={`bubble ${isUser ? 'bubble-user' : 'bubble-bot'}`}>
-          {message.content}
+          {renderContent(message.content)}
         </div>
+
+        {!isUser && message.citations && message.citations.length > 0 && (
+          <div className="citation-block" aria-label="知识库引用">
+            <span className="citation-kicker">引用</span>
+            {message.citations.map((citation) => (
+              <span
+                className="citation-chip"
+                key={`${citation.id}-${citation.question}`}
+                title={citation.category}
+              >
+                <span className="citation-index">[{citation.id}]</span>
+                <span className="citation-question">{citation.question}</span>
+                <span className="citation-score">{citation.score.toFixed(2)}</span>
+              </span>
+            ))}
+          </div>
+        )}
 
         <div className="message-time">{formatTime(message.createdAt)}</div>
       </div>

@@ -52,7 +52,8 @@
 
 ### POST /api/v1/chat/send
 
-发送消息。每会话默认限流 60 次/分钟。
+发送消息。每会话默认限流 60 次/分钟,Redis Lua 原子滑动窗口计数;
+超限返回 429,并带 `Retry-After: 60` 响应头。
 
 请求:
 
@@ -81,6 +82,32 @@
   "need_transfer": false,
   "message_id": 42,
   "tool_calls": [{ "tool": "query_order", "success": true }],
+  "citations": [],
+  "agent_mode": "multi_step"
+}
+```
+
+`citations` 为 RAG 回答引用的知识条目;非 RAG 路径返回空数组:
+
+```json
+{
+  "id": 1,
+  "category": "退换货政策",
+  "question": "商品可以退换吗",
+  "score": 0.77
+}
+```
+
+复合任务(查订单 → 取消)的 `tool_calls` 会包含完整工具链:
+
+```json
+{
+  "response": "已为您取消订单 ORDER20260401001...",
+  "tool_calls": [
+    { "tool": "query_order", "success": true },
+    { "tool": "refund", "success": true }
+  ],
+  "citations": [],
   "agent_mode": "multi_step"
 }
 ```
@@ -89,7 +116,7 @@
 
 | 值 | 含义 |
 | --- | --- |
-| `multi_step` | 订单查询由 LangGraph 多步 Agent(模型 ↔ 工具,最多 5 步)完成 |
+| `multi_step` | 订单查询 / 取消 / 退款由 LangGraph 多步 Agent(模型 ↔ 工具,最多 5 步)完成 |
 | `single_step` | 既有单步 Agent(转人工 / 工具 / RAG / LLM) |
 | `single_step_fallback` | 多步图不可用、执行失败、超步数或空结果时,自动回退单步 Agent |
 
@@ -116,6 +143,14 @@
       },
       "sentiment": "neutral",
       "sentiment_score": 0.0,
+      "citations": [
+        {
+          "id": 1,
+          "category": "退换货政策",
+          "question": "商品可以退换吗",
+          "score": 0.77
+        }
+      ],
       "created_at": "2026-10-19T14:00:01"
     }
   ],
@@ -223,6 +258,9 @@
 | GET | `/order/{order_no}` | 订单号 |
 | GET | `/product/list` | `keyword`、`category`、分页 |
 | GET | `/product/{sku}` | SKU |
+
+> 订单接口返回的 `receiver_name`、`receiver_phone`、`shipping_address` 已脱敏,
+> 例如 `张**`、`138****6789`、`北京市朝阳区***`。原始数据保留在数据库。
 
 ---
 

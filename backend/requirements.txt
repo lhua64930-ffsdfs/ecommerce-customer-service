@@ -8,6 +8,8 @@ websockets>=14
 sqlalchemy[asyncio]>=2.0.36,<2.1
 aiomysql>=0.3.2
 pymysql>=1.1.1
+# MySQL 8 默认 caching_sha2_password 认证需要
+cryptography>=43
 redis>=5.2,<6.0
 
 # ============ 数据校验 / 配置 ============
@@ -40,6 +42,8 @@ python-dotenv>=1.0
 loguru>=0.7
 PyYAML>=6.0
 tenacity>=9.0
+# 演示 GIF 合成(scripts/make_demo_gif.py)
+Pillow>=10
 
 # ============ 测试 ============
 pytest>=8.3

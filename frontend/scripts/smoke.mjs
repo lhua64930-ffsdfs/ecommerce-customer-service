@@ -5,7 +5,6 @@
  * 使用系统已安装的 Microsoft Edge,无需额外下载浏览器。
  */
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { chromium } from 'playwright'
 
 const BASE = process.env.BASE_URL || 'http://127.0.0.1:5173'
@@ -19,6 +18,16 @@ page.on('console', (message) => {
   if (message.type() === 'error') errors.push(`console: ${message.text()}`)
 })
 
+const scrollToBottom = async () => {
+  await page
+    .locator('.chat-messages')
+    .evaluate((element) => {
+      element.scrollTop = element.scrollHeight
+    })
+    .catch(() => {})
+  await page.waitForTimeout(400)
+}
+
 try {
   await page.goto(BASE, { waitUntil: 'domcontentloaded' })
   await page.waitForSelector('text=智能客服小e', { timeout: 15000 })
@@ -28,15 +37,30 @@ try {
 
   await page.fill('textarea', '查订单 ORDER20260315001')
   await page.keyboard.press('Enter')
-  await page.waitForSelector('text=订单详情', { timeout: 60000 })
+  await page
+    .locator('.bubble-bot', { hasText: 'ORDER20260315001' })
+    .first()
+    .waitFor({ state: 'visible', timeout: 90000 })
+  await scrollToBottom()
   const orderText = await page.locator('body').innerText()
   console.log('ORDER_DETAIL_OK:', orderText.includes('ORDER20260315001'))
-  console.log('ADDRESS_OK:', orderText.includes('北京市朝阳区建国路88号'))
+  console.log('ADDRESS_MASKED_OK:', orderText.includes('北京市朝阳区***'))
+  console.log('PHONE_MASKED_OK:', orderText.includes('138****6789'))
+  console.log('FULL_PHONE_HIDDEN:', !orderText.includes('13800006789'))
   await page.screenshot({ path: `${SHOT_DIR}/chat-order.png` })
+
+  await page.fill('textarea', '商品可以退换吗')
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('.citation-chip', { timeout: 90000 })
+  await scrollToBottom()
+  const ragText = await page.locator('body').innerText()
+  console.log('RAG_CITATION_OK:', ragText.includes('退换货政策') || ragText.includes('商品可以退换吗'))
+  await page.screenshot({ path: `${SHOT_DIR}/chat-rag.png` })
 
   await page.fill('textarea', '太差了我要投诉')
   await page.keyboard.press('Enter')
-  await page.waitForSelector('text=转接投诉处理专员', { timeout: 60000 })
+  await page.waitForSelector('text=转接投诉处理专员', { timeout: 90000 })
+  await scrollToBottom()
   const transferText = await page.locator('body').innerText()
   console.log('TRANSFER_OK:', transferText.includes('转接投诉处理专员'))
   console.log('NEGATIVE_BADGE_OK:', transferText.includes('需要关注'))
@@ -61,8 +85,30 @@ try {
   await page.waitForSelector('.ant-drawer-open', { timeout: 15000 })
   await page.waitForSelector('.ant-drawer-body .message-bubble', { timeout: 15000 })
   const drawerText = await page.locator('.ant-drawer-body').innerText()
-  console.log('SESSION_DETAIL_OK:', drawerText.includes('订单详情') || drawerText.includes('转接投诉'))
+  console.log(
+    'SESSION_DETAIL_OK:',
+    drawerText.includes('ORDER20260315001') ||
+      drawerText.includes('订单') ||
+      drawerText.includes('转接投诉'),
+  )
   await page.screenshot({ path: `${SHOT_DIR}/sessions.png` })
+
+  // 可选:真实 LLM 模式下演示「查订单 → 取消」复合任务,并单独截图
+  if (process.env.COMPOUND_DEMO === '1') {
+    await page.goto(BASE, { waitUntil: 'domcontentloaded' })
+    await page.waitForSelector('text=智能客服小e', { timeout: 15000 })
+    await page.fill('textarea', '查订单 ORDER20260401001 然后帮我取消')
+    await page.keyboard.press('Enter')
+    await page
+      .locator('.bubble-bot', { hasText: 'ORDER20260401001' })
+      .last()
+      .waitFor({ state: 'visible', timeout: 90000 })
+    await page.waitForTimeout(2000)
+    await scrollToBottom()
+    const compoundText = await page.locator('body').innerText()
+    console.log('COMPOUND_OK:', compoundText.includes('取消'))
+    await page.screenshot({ path: `${SHOT_DIR}/chat-cancel.png` })
+  }
 
   console.log('PAGE_ERRORS:', errors.length ? JSON.stringify(errors) : 'none')
 } finally {

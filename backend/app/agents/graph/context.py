@@ -6,6 +6,8 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.utils.citations import build_citations
+
 
 @dataclass
 class ToolContext:
@@ -16,6 +18,7 @@ class ToolContext:
     session_id: str
     user_message: str
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    citations: list[dict[str, Any]] = field(default_factory=list)
 
     def tool_params(self, **kwargs: Any) -> dict[str, Any]:
         """合并请求上下文与模型给出的工具参数。"""
@@ -28,7 +31,18 @@ class ToolContext:
         }
 
     def record_tool_call(self, tool_name: str, result: dict[str, Any]) -> None:
-        """按对外契约记录工具调用(只暴露工具名与成功标志)。"""
+        """按对外契约记录工具调用(只暴露工具名与成功标志)。
+
+        知识检索工具额外带回 citations,供聊天响应展示来源。
+        """
         self.tool_calls.append(
             {"tool": tool_name, "success": bool(result.get("success"))}
         )
+        if tool_name != "search_knowledge" or not result.get("success"):
+            return
+
+        known_ids = {item["id"] for item in self.citations}
+        for citation in build_citations(result.get("results") or []):
+            if citation["id"] not in known_ids:
+                self.citations.append(citation)
+                known_ids.add(citation["id"])

@@ -62,6 +62,15 @@ class IntentInfo(BaseModel):
     priority: int = 0
 
 
+class Citation(BaseModel):
+    """RAG 回答引用的知识条目。"""
+
+    id: int
+    category: str = ""
+    question: str = ""
+    score: float = 0.0
+
+
 class MessageResponse(BaseModel):
     id: int
     session_id: str
@@ -71,6 +80,7 @@ class MessageResponse(BaseModel):
     intent: IntentInfo | None = None
     sentiment: SentimentType | None = None
     sentiment_score: float | None = None
+    citations: list[Citation] = Field(default_factory=list)
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -85,6 +95,9 @@ class SendMessageResponse(BaseModel):
     need_transfer: bool = Field(False, description="是否需要转人工")
     message_id: int | None = Field(None, description="机器人消息ID")
     tool_calls: list[dict[str, Any]] = Field(default_factory=list, description="工具调用记录")
+    citations: list[Citation] = Field(
+        default_factory=list, description="RAG 回答引用的知识条目"
+    )
     agent_mode: AgentMode = Field(
         AgentMode.SINGLE_STEP,
         description="本次处理路径:multi_step / single_step / single_step_fallback",

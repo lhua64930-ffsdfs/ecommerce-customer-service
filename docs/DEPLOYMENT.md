@@ -88,9 +88,9 @@ Windows 默认禁止绑定 80 端口,因此映射为 8080;Linux 可将 compose �
 | `EMBEDDING_DIM` | 向量维度 | `512` |
 | `MILVUS_URI` | Milvus 地址 | `http://127.0.0.1:19530` |
 | `MILVUS_COLLECTION` | 集合名 | `knowledge_base` |
+| `RAG_VECTOR_RETRY_SECONDS` | 向量检索失败后的降级冷却秒数 | `30` |
 | `HF_ENDPOINT` | HuggingFace 镜像 | `https://hf-mirror.com` |
-| `JWT_SECRET_KEY` | JWT 密钥(预留) | 需修改 |
-| `RATE_LIMIT_PER_MINUTE` | 每会话每分钟消息上限 | `60` |
+| `RATE_LIMIT_PER_MINUTE` | 每会话每分钟消息上限(滑动窗口) | `60` |
 
 ## 6. 常见问题
 
@@ -168,8 +168,8 @@ docker compose -f docker/docker-compose.yml down -v
 
 ## 8. 安全建议
 
-- 修改默认数据库密码与 `JWT_SECRET_KEY`;
+- 修改默认数据库密码与示例密钥;
 - 生产环境启用 HTTPS(Nginx + 证书);
-- 为管理接口补充登录鉴权与权限控制;
 - 限制 MySQL/Redis/Milvus 端口不对外暴露;
-- 对 LLM Key 使用环境变量或密钥管理服务,不要提交到仓库。
+- 对 LLM Key 使用环境变量或密钥管理服务,不要提交到仓库;
+- 按部署环境收紧 `ALLOWED_ORIGINS` 白名单。

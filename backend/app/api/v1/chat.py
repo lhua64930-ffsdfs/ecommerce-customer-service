@@ -30,7 +30,7 @@ from app.schemas.chat import (
     SessionInfo,
     TransferRequest,
 )
-from app.utils.cache import incr_with_ttl
+from app.utils.cache import record_rate_hit
 from app.utils.logger import logger
 
 router = APIRouter()
@@ -100,10 +100,18 @@ async def send_message(
     db: AsyncSession = Depends(get_db),
     multi_step_agent: MultiStepAgent | None = Depends(get_multi_step_agent),
 ) -> SendMessageResponse:
-    # 限流:同一会话每分钟最多 N 条
-    count = await incr_with_ttl(f"rate:chat:{payload.session_id}", 60)
+    # 限流:同一会话每分钟最多 N 条(Redis 原子滑动窗口)
+    count = await record_rate_hit(
+        f"rate:chat:sw:{payload.session_id}",
+        limit=settings.RATE_LIMIT_PER_MINUTE,
+        window_seconds=60,
+    )
     if count is not None and count > settings.RATE_LIMIT_PER_MINUTE:
-        raise HTTPException(status_code=429, detail="请求过于频繁,请稍后再试")
+        raise HTTPException(
+            status_code=429,
+            detail="请求过于频繁,请稍后再试",
+            headers={"Retry-After": "60"},
+        )
 
     result = await db.execute(select(Session).where(Session.session_id == payload.session_id))
     session = result.scalar_one_or_none()
@@ -134,7 +142,7 @@ async def send_message(
         for message in reversed(history_rows)
     ]
 
-    # 保存用户消息
+    # 先提交用户消息:即使后续工具异常并 rollback,用户输入也不会丢失
     db.add(
         Message(
             session_id=session.id,
@@ -145,6 +153,7 @@ async def send_message(
             meta=payload.metadata or None,
         )
     )
+    await db.commit()
 
     agent = CustomerServiceAgent(
         session_id=payload.session_id,
@@ -173,6 +182,7 @@ async def send_message(
         is_human_transfer=agent_result["need_transfer"],
         meta={
             "tool_calls": agent_result.get("tool_calls", []),
+            "citations": agent_result.get("citations", []),
             "handler_type": intent_data.get("handler_type"),
             "entities": intent_data.get("entities", []),
             "agent_mode": agent_result.get("agent_mode"),
@@ -197,6 +207,7 @@ async def send_message(
         need_transfer=agent_result["need_transfer"],
         message_id=bot_message.id,
         tool_calls=agent_result.get("tool_calls", []),
+        citations=agent_result.get("citations", []),
         agent_mode=agent_result.get("agent_mode", AgentMode.SINGLE_STEP.value),
     )
 
@@ -253,6 +264,7 @@ async def get_history(
                 handler_type=intent.handler_type,
                 priority=intent.priority,
             )
+        meta = message.meta if isinstance(message.meta, dict) else {}
         messages.append(
             MessageResponse(
                 id=message.id,
@@ -265,6 +277,7 @@ async def get_history(
                 sentiment_score=float(message.sentiment_score)
                 if message.sentiment_score is not None
                 else None,
+                citations=meta.get("citations") or [],
                 created_at=message.created_at,
             )
         )

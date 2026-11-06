@@ -10,12 +10,14 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
 from app.services.embedding_service import EmbeddingService
 from app.services.llm_service import LLMService
+from app.utils.citations import build_citations as build_citation_list
 from app.utils.logger import logger
 
 KNOWLEDGE_FILE = Path(__file__).resolve().parents[3] / "knowledge_base" / "faqs.json"
@@ -45,6 +47,10 @@ class RAGService:
         self._collection_ready = False
         self._client_lock: asyncio.Lock | None = None
         self._fallback_docs: list[dict[str, Any]] | None = None
+        # 最近一次检索实际走的路径(vector / keyword),用于评测与诊断
+        self.last_search_mode: str | None = None
+        # 向量检索失败后的冷却截止时间(monotonic),避免持续重试宕机服务
+        self._vector_retry_after = 0.0
 
     def _lock(self) -> asyncio.Lock:
         if self._client_lock is None:
@@ -143,9 +149,14 @@ class RAGService:
         if not query:
             return []
 
+        if time.monotonic() < self._vector_retry_after:
+            self.last_search_mode = "keyword"
+            return self._keyword_search(query, top_k, filters)
+
         try:
-            vector = await self.embedding_service.encode_one(query)
+            # 先确认 Milvus 可用,再加载 Embedding 模型,避免向量库宕机时白白加载模型
             client = await self._ensure_ready()
+            vector = await self.embedding_service.encode_one(query)
             expression = self._build_filter(filters)
 
             results = await asyncio.to_thread(
@@ -158,6 +169,7 @@ class RAGService:
             )
 
             hits = results[0] if results else []
+            self.last_search_mode = "vector"
             return [
                 {
                     "id": hit.get("id"),
@@ -170,6 +182,10 @@ class RAGService:
             ]
         except Exception as exc:  # noqa: BLE001 - 基础设施异常统一降级
             logger.warning("Milvus 检索不可用,降级为关键词检索: {}", exc)
+            self.last_search_mode = "keyword"
+            self._vector_retry_after = (
+                time.monotonic() + settings.RAG_VECTOR_RETRY_SECONDS
+            )
             return self._keyword_search(query, top_k, filters)
 
     async def retrieve(
@@ -181,6 +197,21 @@ class RAGService:
         """检索并格式化为 LLM 上下文。"""
         results = await self.search(query, top_k=top_k, filters=filters)
         return self._format_context(results)
+
+    async def retrieve_with_citations(
+        self,
+        query: str,
+        top_k: int = 5,
+        filters: dict[str, Any] | None = None,
+    ) -> tuple[str, list[dict[str, Any]]]:
+        """检索并同时返回 LLM 上下文与结构化引用。"""
+        results = await self.search(query, top_k=top_k, filters=filters)
+        return self._format_context(results), build_citation_list(results)
+
+    @staticmethod
+    def build_citations(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """把检索结果转换为引用(保留给调用方与测试使用)。"""
+        return build_citation_list(results)
 
     async def generate(self, query: str, context: str) -> str:
         """基于检索结果生成回答。"""
@@ -287,6 +318,8 @@ class RAGService:
         try:
             client = await asyncio.to_thread(self._get_client_sync)
             await asyncio.to_thread(client.list_collections)
+            # 健康检查通过时立即解除降级冷却,便于恢复后马上走回向量检索
+            self._vector_retry_after = 0.0
             return True
         except Exception as exc:  # noqa: BLE001
             logger.warning("Milvus 健康检查失败: {}", exc)

@@ -1,66 +1,67 @@
 # 售后智答(After-Sales Intelligent Q&A Platform)
 
-基于 **FastAPI + React + MySQL + Redis + Milvus + LLM + RAG** 的售后智答平台。
-支持意图识别、情感分析、知识库检索增强、Agent 工具调用、转人工与数据分析看板。
+基于 **FastAPI + React + MySQL + Redis + Milvus + LangGraph + RAG** 的电商售后智能客服系统。
+覆盖意图识别、情感分析、知识库检索增强、多步 Agent 工具调用、复合任务办理、
+转人工、数据看板与知识库运营。
 
-> 前端技术栈为 **React 18**（由 Vue 3 方案调整而来），其余架构保持一致。
->
-> 面向 AI/LLM 应用工程师实习的作品集项目。面试材料:
-> [可复现演示脚本](docs/DEMO.md) · [ADR-0001](docs/adr/0001-langgraph-primary-agent.md)。
+> 演示入口:[可复现演示脚本](docs/DEMO.md) · [架构设计](docs/ARCHITECTURE.md) ·
+> [ADR-0001:LangGraph 主路径 + Agent Fallback](docs/adr/0001-langgraph-primary-agent.md)
 
 ## 功能
 
 - **7×24 智能对话**:多轮上下文、意图路由、快捷回复
-- **意图识别**:关键词规则 + LLM 融合,支持实体抽取(订单号/手机号/商品名/价格/日期)
+- **意图识别**:关键词规则 + LLM 融合,支持订单号/手机号/商品名/价格/日期实体抽取
 - **情感分析**:词典 + 规则,负向情绪安抚并自动转人工
-- **RAG 知识库**:本地 BGE 中文向量模型 + Milvus 语义检索,失败自动降级关键词检索
+- **RAG 知识库**:本地 BGE 中文向量模型 + Milvus 语义检索,回答附带结构化引用(citations)
 - **Agent 工具集**:知识检索、订单查询、商品查询、退款/取消、转人工、创建工单
-- **多步 Agent**:LangGraph 模型节点 + 工具节点 + 条件边(最多 5 步),订单查询优先走图;失败自动回退单步 Agent(Agent Fallback),响应通过 `agent_mode` 标记实际路径
-- **业务安全**:订单查询校验归属,防止越权查看他人订单
+- **多步 Agent**:LangGraph 模型节点 + 工具节点 + 条件边,单请求最多 5 步;
+  失败自动回退单步 Agent,响应通过 `agent_mode` 标记实际路径
+- **复合任务**:一次请求内完成「查订单 → 判断状态 → 取消/退货」,取消操作真实写库且幂等
+- **RAG 评测**:固定评测集 + Recall@1/3/5、MRR@5 离线评测脚本
+- **业务安全**:订单查询校验归属;手机号、姓名、收货地址在工具输出与 API 响应中脱敏
+- **接口限流**:Redis + Lua 原子滑动窗口,按会话限制每分钟请求数
 - **数据看板**:会话/消息/AI 解决率/转人工率/满意度,意图与情感分布
 - **知识库管理**:增删改查 + 语义检索,变更自动重建向量
 - **会话记录**:历史会话列表与完整对话回放
 
 ## 项目亮点
 
-- **多步 Agent 可演示**:LangGraph 模型节点 + 工具节点 + 条件边,
-  模型自主决定调用哪个工具,单请求最多 5 步。
+- **复合任务可演示**:模型先调用 `query_order` 读取真实状态,再决定取消还是退货;
+  取消只对「待支付 / 已支付」生效,已发货订单引导退货,避免误操作。
 - **Agent Fallback 可观测**:图失败、超步数、空结果或 LLM 不可用时自动回退单步 Agent,
   响应用 `agent_mode` 区分 `multi_step` / `single_step` / `single_step_fallback`。
+- **RAG 回答可追溯**:检索结果转成 `citations`(知识 id、分类、问题、相似度),
+  随聊天响应返回并持久化到消息元数据,会话回放仍可查看来源。
+- **RAG 可降级**:向量库或 Embedding 不可用时自动回退关键词 + bigram 检索,
+  并带 30 秒冷却,避免每个请求重复重试已宕机的 Milvus。
 - **真实数据链路**:8 张 MySQL 表 + Redis + Milvus,不是前端 mock;
   订单查询在工具层校验归属。
-- **RAG 可降级**:本地 BGE 中文向量 + Milvus COSINE 检索,
-  向量库/Embedding 不可用时自动回退关键词 + bigram 检索。
-- **测试不碰真实 LLM**:21 个 pytest,HTTP 主接缝 + 脚本化 Fake ChatModel。
+- **安全工程**:订单归属校验、PII 脱敏、Redis 原子滑动窗口限流、
+  密钥仅从环境变量注入。
+- **测试不碰真实 LLM**:42 个 pytest,HTTP 主接缝 + 脚本化 Fake ChatModel,
+  覆盖多步图、复合任务、fallback、RAG 引用与评测指标计算。
 - **界面设计**:聊天页采用「售后受理台 / Service Docket」风格——暖纸底、
   墨色结构线、朱红印章与账本式消息批注,订单号/时间使用等宽字体。
 - **一键复现**:Docker Compose 覆盖 MySQL / Redis / Milvus / 后端 / 前端 / Nginx。
-
-## 当前进度
-
-| 能力 | 状态 |
-| --- | --- |
-| 单步 Agent / RAG / 转人工 / 数据看板 / 知识库 | ✅ 已完成 |
-| LangGraph 多步 Agent(订单查询)+ Agent Fallback | ✅ T1 |
-| 复合任务(查订单 → 取消/退货) | 🚧 T2 |
-| RAG 结构化引用(citations) | 🚧 T3 |
-| RAG 评测集 + Recall@1/3/5 | 🚧 T4 |
-| 限流修复 + PII 脱敏 | 🚧 T5 |
-| 演示 GIF / 新截图 | 🚧 T6 |
-
-> 未完成项在 [已知限制](#已知限制) 中有说明。
-> 面试时请如实区分「已实现 / 已验证 / 计划中」,不要虚报评测指标。
 
 ## 界面预览
 
 聊天页采用「售后受理台 / Service Docket」视觉:纸感背景、受理编号抬头、
 印章式头像与账本式消息批注;侧栏 Logo 为「售」字印章,与受理台抬头一致。
 
+### 演示 GIF
+
+![演示 GIF](docs/images/demo.gif)
+
 ### 智能对话
 
 | 欢迎页 | 订单查询(意图 / 情感 / 工具调用) |
 | --- | --- |
 | ![欢迎页](docs/images/chat-welcome.png) | ![订单查询](docs/images/chat-order.png) |
+
+| RAG 回答 + 结构化引用 | 复合任务(查订单 → 取消) |
+| --- | --- |
+| ![RAG 引用](docs/images/chat-rag.png) | ![复合任务](docs/images/chat-cancel.png) |
 
 | 投诉转人工(负向情感 + 排队信息) |
 | --- |
@@ -76,8 +77,7 @@
 | --- |
 | ![会话记录](docs/images/sessions.png) |
 
-> 截图来自本地演示数据,订单中的姓名、手机号和地址均为虚构种子数据;
-> 展示用截图已对手机号和详细地址做脱敏处理。
+> 展示数据均为虚构种子;对话截图中的手机号、姓名与详细地址已脱敏。
 
 ## 技术栈
 
@@ -95,21 +95,23 @@
 flowchart LR
     U[用户] --> FE[React 18 + Ant Design]
     FE -->|HTTP /api/v1| API[FastAPI]
+    API --> RL[Redis 滑动窗口限流]
     API --> PRE[预处理 / 情感 / 意图]
     PRE --> ROUTE{意图路由}
-    ROUTE -->|order_query| GRAPH[LangGraph 多步 Agent<br/>模型 ↔ 工具 ≤ 5 步]
+    ROUTE -->|order_query / cancel_order / refund_request| GRAPH[LangGraph 多步 Agent<br/>模型 ↔ 工具 ≤ 5 步]
     GRAPH -->|成功| TOOLS[6 个工具适配层]
     GRAPH -->|失败 / 空结果 / 超步数| SINGLE[单步 Agent]
     ROUTE -->|其他意图| SINGLE
     SINGLE --> TOOLS
     SINGLE --> RAG[RAGService]
+    RAG -->|retrieve + citations| MILVUS[(Milvus)]
+    RAG -->|降级| KB[(知识库 JSON)]
     TOOLS --> DB[(MySQL)]
     TOOLS --> REDIS[(Redis)]
-    RAG --> MILVUS[(Milvus)]
     API --> MSG[(messages / sessions)]
 
     classDef store fill:#f5f5f5,stroke:#999;
-    class DB,REDIS,MILVUS,MSG store;
+    class DB,REDIS,MILVUS,MSG,KB store;
 ```
 
 > 一次完整请求的链路、单步/多步对比与模块职责见
@@ -127,24 +129,25 @@ after-sales-qa/
 │   │   ├── agents/          # Agent 基类、客服 Agent、6 个工具、LangGraph 多步图
 │   │   ├── core/            # 配置、数据库、种子数据、YAML 加载器
 │   │   ├── models/          # 8 张表的 ORM 模型
-│   │   ├── schemas/         # Pydantic 模型
-│   │   ├── services/        # LLM / 情感 / 意图 / Embedding / RAG
-│   │   └── main.py
-│   ├── scripts/             # init_db / import_knowledge / init_vector_db
-│   ├── tests/               # pytest(服务单测 + API 集成测试)
+│   │   ├── schemas/         # Pydantic 模型(含 citation)
+│   │   ├── services/        # LLM / 情感 / 意图 / Embedding / RAG / RAG 评测
+│   │   └── utils/           # 日志、缓存与限流、PII 脱敏、引用构建
+│   ├── scripts/             # init_db / import_knowledge / init_vector_db / evaluate_rag
+│   ├── tests/               # pytest(服务单测 + 图单测 + API 集成测试)
 │   └── requirements.txt
 ├── frontend/
 │   ├── src/
 │   │   ├── api/             # axios 封装
-│   │   ├── components/      # 聊天气泡、快捷回复、输入框、情感指示器、布局
+│   │   ├── components/      # 聊天气泡、引用标签、输入框、情感指示器、布局
 │   │   ├── pages/           # 聊天、看板、知识库、会话记录
 │   │   ├── stores/          # Zustand 状态
 │   │   └── types/
-│   └── scripts/smoke.mjs    # Playwright 浏览器冒烟测试
+│   └── scripts/             # Playwright 冒烟测试与演示 GIF
 ├── config/                  # LLM / 意图 / RAG / Agent 业务配置
-├── knowledge_base/          # 知识库 JSON
+├── knowledge_base/          # 知识库 JSON 与 RAG 评测集
 ├── docker/                  # 开发与生产 compose、Dockerfile、nginx
-└── docs/                    # 架构 / API / 数据库 / 部署 / 面试材料 / ADR
+├── scripts/                 # 演示 GIF 合成
+└── docs/                    # 架构 / API / 数据库 / 部署 / 评测 / 面试材料 / ADR
 ```
 
 ## 快速开始(开发模式)
@@ -198,7 +201,7 @@ npm run dev
 
 ### 4. 配置 LLM(可选)
 
-默认使用 **mock 模式**(未配置 Key 时返回演示回复,其余链路完全可用)。
+默认使用 **mock 模式**(未配置 Key 时返回演示回复,订单、RAG、转人工与看板等链路仍可用)。
 
 使用 DeepSeek:编辑 `backend/.env`:
 
@@ -209,13 +212,14 @@ LLM_API_BASE=https://api.deepseek.com/v1
 LLM_MODEL=deepseek-chat
 ```
 
-重启后端生效。
+重启后端生效。多步 Agent 与复合任务在真实 LLM 模式下走 `multi_step`;
+未配置 Key 时同一请求会回退单步 Agent,链路仍可用。
 
 ## 测试
 
 ### 后端 pytest
 
-需要基础设施容器运行(测试使用真实 MySQL/Redis/Milvus)。当前 **21 个测试**:
+需要基础设施容器运行(测试使用真实 MySQL/Redis/Milvus)。当前 **42 个测试**:
 
 ```bash
 cd backend
@@ -224,9 +228,12 @@ cd backend
 
 覆盖:
 
-- 服务单测:情感规则、意图与实体抽取;
-- 图单测:单工具路径、图失败、空回复、无工具结果、5 步上限、历史传递;
-- API 集成:多步订单查询、强制图失败 fallback、图内转人工 `need_transfer`、订单越权校验;
+- **服务单测**:情感规则、意图与实体抽取、PII 脱敏、RAG 引用构建、评测指标计算;
+- **图单测**:单工具路径、复合任务(查询 → 取消)、知识检索引用、图失败、
+  空回复、无工具结果、5 步上限、历史传递;
+- **API 集成**:多步订单查询、复合任务真实写库、强制图失败 fallback、
+  图内转人工 `need_transfer`、订单越权校验、RAG 引用与历史回放;
+- **限流单测**:滑动窗口计数、过期与 Redis 故障 fail-open;
 - 测试通过 FastAPI `dependency_overrides` 注入脚本化 Fake ChatModel,
   并强制 `LLMService` 进入 mock,不会访问真实 DeepSeek。
 
@@ -239,7 +246,37 @@ cd frontend
 node scripts/smoke.mjs
 ```
 
-覆盖:聊天页欢迎语 → 订单查询 → 投诉转人工 → 数据看板 → 知识库 → 会话记录抽屉。
+覆盖:欢迎语 → 订单查询(PII 脱敏)→ RAG 引用 → 投诉转人工 →
+数据看板 → 知识库 → 会话记录抽屉。
+
+### 演示 GIF
+
+```bash
+cd frontend
+node scripts/demo-gif.mjs
+```
+
+驱动浏览器完成订单查询、RAG 引用与转人工,截图帧由 Pillow 合成为
+`docs/images/demo.gif`。
+
+## RAG 评测
+
+评测集位于 `knowledge_base/eval_set.json`,每条样本是「问题 → 期望知识条目 id」,
+当前覆盖 12 个知识条目的 36 条查询。评测只衡量检索排序质量,不评估生成答案。
+
+```bash
+cd backend
+./venv/Scripts/python.exe scripts/evaluate_rag.py
+```
+
+输出 Recall@1/3/5、MRR@5、检索模式(vector / keyword)与分类别 Recall@3。
+本机实测(Milvus 向量检索,36 条查询):
+
+| Recall@1 | Recall@3 | Recall@5 | MRR@5 |
+| --- | --- | --- | --- |
+| 0.9722 | 1.0000 | 1.0000 | 0.9861 |
+
+评测命令、分类别结果与原始 JSON 见 [docs/RAG_EVAL.md](docs/RAG_EVAL.md)。
 
 ## Docker 整体部署
 
@@ -260,7 +297,7 @@ LLM_API_KEY="$DEEPSEEK_API_KEY" docker compose -f docker/docker-compose.yml up -
 # docker compose -f docker/docker-compose.yml up -d --build
 ```
 
-未提供 Key 时后端自动进入 mock 模式,系统其余功能不受影响。
+未提供 Key 时后端自动进入 mock 模式,订单、RAG、转人工与看板等功能仍可用。
 
 - 应用入口:http://localhost:8080
 - API 文档:http://localhost:8080/docs
@@ -280,8 +317,8 @@ docker compose -f docker/docker-compose.yml down
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | POST | `/api/v1/chat/session` | 创建会话 |
-| POST | `/api/v1/chat/send` | 发送消息(意图/情感/工具调用) |
-| GET | `/api/v1/chat/history` | 历史消息 |
+| POST | `/api/v1/chat/send` | 发送消息(意图/情感/工具调用/引用) |
+| GET | `/api/v1/chat/history` | 历史消息(含 citations) |
 | POST | `/api/v1/chat/transfer` | 转人工 |
 | POST | `/api/v1/chat/rate` | 会话评分 |
 | POST | `/api/v1/intent/recognize` | 意图识别 |
@@ -289,7 +326,7 @@ docker compose -f docker/docker-compose.yml down
 | GET | `/api/v1/agent/tools` | 工具列表 |
 | GET/POST/PUT/DELETE | `/api/v1/knowledge/*` | 知识库管理 |
 | POST | `/api/v1/knowledge/search` | 语义检索 |
-| GET | `/api/v1/order/list`、`/api/v1/order/{order_no}` | 订单查询 |
+| GET | `/api/v1/order/list`、`/api/v1/order/{order_no}` | 订单查询(PII 脱敏) |
 | GET | `/api/v1/product/list`、`/api/v1/product/{sku}` | 商品查询 |
 | GET | `/api/v1/analytics/summary` | 核心指标 |
 | GET | `/api/v1/analytics/sessions` | 会话列表 |
@@ -309,48 +346,32 @@ python scripts/import_knowledge.py --file ../knowledge_base/faqs.json
 
 # 重建全部向量索引(更换模型或 Milvus 数据丢失时)
 python scripts/init_vector_db.py
+
+# 恢复演示订单状态(重复演示复合任务前)
+python scripts/reset_demo_data.py
+
+# RAG 检索离线评测
+python scripts/evaluate_rag.py
 ```
 
-## 与原始方案的差异
+## 技术选型说明
 
-| 项 | 原始方案 | 本项目 | 原因 |
-| --- | --- | --- | --- |
-| 前端 | Vue 3 + Element Plus + Pinia | React 18 + Ant Design + Zustand | 需求方指定 |
-| Milvus | v2.3.3 | v2.5.4 | pymilvus 2.3 不支持 Python 3.13 |
-| MinIO | 独立 MinIO 容器 | Milvus 本地存储模式 | MinIO 官方镜像自 2025 年起停止公共分发 |
-| Python 依赖 | 2024 年初版本 | 2025+ 兼容版本 | 适配 Python 3.13 |
-| `uuid==1.30` | 文档列出 | 已移除 | PyPI 上的 typosquat 假包 |
-| 情感分析 | 示例规则 | 修复否定词跨句、感叹号方向等 bug | 示例代码存在逻辑错误 |
-| 订单工具 | 模拟数据 | 真实 MySQL + 归属校验 | 修复 IDOR 越权风险 |
-| 商品/订单工具 | 硬编码 mock | 查询数据库种子数据 | 可演示真实链路 |
-| Agent 编排 | 单步 Agent | LangGraph 多步主路径 + 单步 Agent fallback | 展示多步工具调用且保留稳定兜底 |
-
-## 已知限制
-
-> 这一节是面试时主动讲边界的地方:已知问题 + 影响 + 计划,比「没有 bug」更可信。
-
-- **多步 Agent 目前只接入 `order_query`**:复合任务(查订单 → 取消/退货)还在 T2;
-  写操作暂时留在单步路径,避免 fallback 重复执行副作用。
-- **RAG 还没有结构化引用与评测**:聊天回答基于检索上下文,但未返回 `citations`;
-  知识库只有 12 条种子条目,Recall@1/3/5 评测集在 T4。不要虚报召回率。
-- **限流实现有已知缺陷**:当前是 `INCR + EXPIRE`,每次请求刷新 TTL,
-  持续流量下计数可能永不过期,达到上限后会永久 429;计划 T5 改为分钟桶/滑动窗口。
-- **订单 PII 未脱敏**:订单详情仍展示完整手机号/地址,T5 计划做 `mask_phone`/`mask_address`;
-  仓库内演示数据均为虚构种子。
-- **无 JWT/RBAC**:当前以会话绑定用户身份,订单工具校验归属;
-  生产部署前需要补认证、鉴权与审计。
-- **无可观测性**:只有 loguru 日志 + message metadata(意图、情感、工具调用、`agent_mode`);
-  没有 Tracing、延迟/token/成本指标。
-- **无 CI/压测**:测试与构建本地通过,但没有 CI 流水线和生产级性能数据。
-- **图每次请求编译**:`MultiStepAgent` 按请求构建并编译图,可缓存优化。
-- **SSE 流式输出未实现**:当前一次性返回完整回复。
-- 情感分析为词典 + 规则,可替换为模型;意图可扩展为向量召回。
-- 前端构建产物约 2.2MB(antd + echarts),可按路由做代码分割。
-- `Base.metadata.create_all` 用于开发期建表,生产建议引入 Alembic 迁移。
+| 选型 | 实现 | 说明 |
+| --- | --- | --- |
+| 前端 | React 18 + Ant Design 5 + Zustand | 组件生态成熟,状态管理轻量 |
+| 向量库 | Milvus 2.5.4(本地存储模式) | 适配 Python 3.13;单机部署无需 MinIO |
+| Embedding | 本地 BGE small zh v1.5(512 维) | 中文语义检索,可离线运行 |
+| LLM | DeepSeek(OpenAI 兼容) | 未配置 Key 时自动进入 mock,便于开发与测试 |
+| Agent 编排 | LangGraph 多步主路径 + 单步 fallback | 展示多步工具调用,同时保留稳定兜底路径 |
+| 限流 | Redis + Lua 原子滑动窗口 | 计数随窗口滚动过期,避免持续流量下永久 429 |
+| PII | 手机号 / 姓名 / 地址脱敏 | 工具输出与订单 API 统一处理,原始数据留库 |
+| 情感分析 | 词典 + 规则 | 处理否定词跨句、感叹号方向等边界情况 |
+| 订单工具 | MySQL 真实数据 + 归属校验 | 防止通过订单号越权查看他人订单 |
 
 ## 相关文档
 
-- [可复现演示脚本](docs/DEMO.md):3 分钟演示、curl 命令、预期 `agent_mode`、排障
+- [可复现演示脚本](docs/DEMO.md):5 分钟演示、curl 命令、预期 `agent_mode`、排障
+- [RAG 评测报告](docs/RAG_EVAL.md):评测集、指标定义与实测结果
 - [架构设计](docs/ARCHITECTURE.md)
 - [API 规范](docs/API_SPEC.md)
 - [数据库设计](docs/DATABASE_SCHEMA.md)

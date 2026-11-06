@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.order import Order
 from app.utils.logger import logger
+from app.utils.pii import mask_address, mask_name, mask_phone
 
 STATUS_MAP = {
     "pending": ("⏳", "待支付"),
@@ -120,22 +121,12 @@ class QueryOrderTool:
             [
                 "━━━━━━━━━━━━━━━━━━━━\n",
                 "📍 收货信息\n",
-                f"{order.receiver_name or ''} {order.receiver_phone or ''}\n",
-                f"{QueryOrderTool._format_address(order.shipping_address)}\n",
+                f"{mask_name(order.receiver_name)} {mask_phone(order.receiver_phone)}\n",
+                f"{mask_address(order.shipping_address)}\n",
                 f"下单时间:{order.created_at:%Y-%m-%d %H:%M}\n",
             ]
         )
         return "".join(lines)
-
-    @staticmethod
-    def _format_address(address: Any) -> str:
-        if isinstance(address, dict):
-            province = str(address.get("province", ""))
-            city = str(address.get("city", ""))
-            detail = str(address.get("detail", ""))
-            # 直辖市省市同名时只保留一个
-            return f"{province}{'' if city == province else city}{detail}"
-        return str(address or "")
 
     @staticmethod
     def _format_order_list(orders: list[Order]) -> str:
@@ -162,9 +153,10 @@ class QueryOrderTool:
             "pay_amount": float(order.pay_amount) if order.pay_amount is not None else None,
             "status": order.status,
             "tracking_no": order.tracking_no,
-            "receiver_name": order.receiver_name,
-            "receiver_phone": order.receiver_phone,
-            "shipping_address": order.shipping_address,
+            # 结构化结果同样脱敏,避免模型把完整 PII 原样复述给用户
+            "receiver_name": mask_name(order.receiver_name),
+            "receiver_phone": mask_phone(order.receiver_phone),
+            "shipping_address": mask_address(order.shipping_address),
             "created_at": order.created_at.isoformat() if order.created_at else None,
         }
 

@@ -90,6 +90,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         intent: result.intent,
         sentiment: result.sentiment,
         sentimentScore: result.sentiment_score,
+        citations: result.citations ?? [],
       }
       set((state) => ({
         messages: [...state.messages, botMessage],
@@ -126,6 +127,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         intent: item.intent ?? undefined,
         sentiment: item.sentiment ?? undefined,
         sentimentScore: item.sentiment_score ?? undefined,
+        citations: item.citations ?? [],
       }))
       set({ sessionId, messages })
     } catch (error) {

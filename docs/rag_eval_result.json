@@ -1,0 +1,87 @@
+{
+  "total": 36,
+  "top_k": 5,
+  "recall_at_1": 0.9722,
+  "recall_at_3": 1.0,
+  "recall_at_5": 1.0,
+  "mrr_at_5": 0.9861,
+  "retrieval_modes": {
+    "vector": 36,
+    "keyword": 0
+  },
+  "per_category": {
+    "优惠券": {
+      "total": 3,
+      "recall_at_1": 1.0,
+      "recall_at_3": 1.0,
+      "recall_at_5": 1.0
+    },
+    "会员权益": {
+      "total": 3,
+      "recall_at_1": 1.0,
+      "recall_at_3": 1.0,
+      "recall_at_5": 1.0
+    },
+    "促销活动": {
+      "total": 3,
+      "recall_at_1": 1.0,
+      "recall_at_3": 1.0,
+      "recall_at_5": 1.0
+    },
+    "发票服务": {
+      "total": 3,
+      "recall_at_1": 1.0,
+      "recall_at_3": 1.0,
+      "recall_at_5": 1.0
+    },
+    "售后政策": {
+      "total": 3,
+      "recall_at_1": 1.0,
+      "recall_at_3": 1.0,
+      "recall_at_5": 1.0
+    },
+    "商品咨询": {
+      "total": 3,
+      "recall_at_1": 1.0,
+      "recall_at_3": 1.0,
+      "recall_at_5": 1.0
+    },
+    "客服联系": {
+      "total": 3,
+      "recall_at_1": 0.6667,
+      "recall_at_3": 1.0,
+      "recall_at_5": 1.0
+    },
+    "支付问题": {
+      "total": 3,
+      "recall_at_1": 1.0,
+      "recall_at_3": 1.0,
+      "recall_at_5": 1.0
+    },
+    "订单服务": {
+      "total": 3,
+      "recall_at_1": 1.0,
+      "recall_at_3": 1.0,
+      "recall_at_5": 1.0
+    },
+    "退换货政策": {
+      "total": 3,
+      "recall_at_1": 1.0,
+      "recall_at_3": 1.0,
+      "recall_at_5": 1.0
+    },
+    "退款服务": {
+      "total": 3,
+      "recall_at_1": 1.0,
+      "recall_at_3": 1.0,
+      "recall_at_5": 1.0
+    },
+    "配送服务": {
+      "total": 3,
+      "recall_at_1": 1.0,
+      "recall_at_3": 1.0,
+      "recall_at_5": 1.0
+    }
+  },
+  "misses": []
+}

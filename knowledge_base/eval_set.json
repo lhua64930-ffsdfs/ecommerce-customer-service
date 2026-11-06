@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "description": "RAG 检索离线评测集:每条问题期望命中 knowledge_base/faqs.json 中的一个知识条目 id。",
+  "samples": [
+    { "query": "买了东西不想要了能退吗", "expected_id": 1, "category": "退换货政策" },
+    { "query": "七天无理由退货怎么规定的", "expected_id": 1, "category": "退换货政策" },
+    { "query": "商品拆封后还可以退换吗", "expected_id": 1, "category": "退换货政策" },
+
+    { "query": "下单后一般几天能送到", "expected_id": 2, "category": "配送服务" },
+    { "query": "偏远地区配送要多久", "expected_id": 2, "category": "配送服务" },
+    { "query": "大型商品多久能送货上门", "expected_id": 2, "category": "配送服务" },
+
+    { "query": "可以用微信或者支付宝付款吗", "expected_id": 3, "category": "支付问题" },
+    { "query": "支持花呗分期吗", "expected_id": 3, "category": "支付问题" },
+    { "query": "银行卡支付可以吗", "expected_id": 3, "category": "支付问题" },
+
+    { "query": "开会员有什么好处", "expected_id": 4, "category": "会员权益" },
+    { "query": "会员积分能干什么", "expected_id": 4, "category": "会员权益" },
+    { "query": "VIP等级有哪些权益", "expected_id": 4, "category": "会员权益" },
+
+    { "query": "现在有什么满减活动", "expected_id": 5, "category": "促销活动" },
+    { "query": "双十一有折扣吗", "expected_id": 5, "category": "促销活动" },
+    { "query": "最近有没有优惠促销", "expected_id": 5, "category": "促销活动" },
+
+    { "query": "家电保修多久", "expected_id": 6, "category": "售后政策" },
+    { "query": "家具的质保期是多长时间", "expected_id": 6, "category": "售后政策" },
+    { "query": "商品坏了可以免费维修吗", "expected_id": 6, "category": "售后政策" },
+
+    { "query": "优惠券在哪里使用", "expected_id": 7, "category": "优惠券" },
+    { "query": "两张优惠券可以一起用吗", "expected_id": 7, "category": "优惠券" },
+    { "query": "红包过期了还能用吗", "expected_id": 7, "category": "优惠券" },
+
+    { "query": "买东西能开增值税专用发票吗", "expected_id": 8, "category": "发票服务" },
+    { "query": "怎么申请电子发票", "expected_id": 8, "category": "发票服务" },
+    { "query": "收货后还能补开发票吗", "expected_id": 8, "category": "发票服务" },
+
+    { "query": "订单还没发货能改收货地址吗", "expected_id": 9, "category": "订单服务" },
+    { "query": "已经发货了还能改地址吗", "expected_id": 9, "category": "订单服务" },
+    { "query": "怎么修改订单的收货地址", "expected_id": 9, "category": "订单服务" },
+
+    { "query": "你们卖的是正品吗", "expected_id": 10, "category": "商品咨询" },
+    { "query": "怎么验证商品是不是官方授权", "expected_id": 10, "category": "商品咨询" },
+    { "query": "买到假货怎么办", "expected_id": 10, "category": "商品咨询" },
+
+    { "query": "退款一般多久能到账", "expected_id": 11, "category": "退款服务" },
+    { "query": "取消订单后钱什么时候退回来", "expected_id": 11, "category": "退款服务" },
+    { "query": "退货退款银行处理要几天", "expected_id": 11, "category": "退款服务" },
+
+    { "query": "怎么联系人工客服", "expected_id": 12, "category": "客服联系" },
+    { "query": "客服电话是多少", "expected_id": 12, "category": "客服联系" },
+    { "query": "人工服务的工作时间是几点", "expected_id": 12, "category": "客服联系" }
+  ]
+}

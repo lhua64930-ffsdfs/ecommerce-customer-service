@@ -10,7 +10,12 @@ from app.agents.graph.multi_step_agent import (
     MultiStepExecutionError,
     MultiStepLimitError,
 )
-from tests.support.fake_chat_model import FakeOrderTool, ScriptedChatModel
+from tests.support.fake_chat_model import (
+    FakeKnowledgeTool,
+    FakeOrderTool,
+    FakeRefundTool,
+    ScriptedChatModel,
+)
 
 
 async def test_order_query_runs_tool_and_returns_multi_step_result() -> None:
@@ -51,6 +56,99 @@ async def test_order_query_runs_tool_and_returns_multi_step_result() -> None:
     observation = model.calls[1][-1]
     assert isinstance(observation, ToolMessage)
     assert "已支付" in str(observation.content)
+
+
+async def test_compound_order_then_cancel_runs_two_tools() -> None:
+    """复合任务:先查订单状态,再调用 refund 取消。"""
+    order_tool = FakeOrderTool()
+    refund_tool = FakeRefundTool()
+    model = ScriptedChatModel(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "query_order",
+                        "args": {"order_no": "ORDER20260401001"},
+                        "id": "call_1",
+                    }
+                ],
+            ),
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "refund",
+                        "args": {"action": "cancel", "order_no": "ORDER20260401001"},
+                        "id": "call_2",
+                    }
+                ],
+            ),
+            AIMessage(content="已为您取消订单 ORDER20260401001。"),
+        ]
+    )
+    agent = MultiStepAgent(
+        chat_model=model,
+        tools={"query_order": order_tool, "refund": refund_tool},
+    )
+
+    result = await agent.run(
+        user_message="查订单 ORDER20260401001 然后帮我取消",
+        history=[],
+        db=None,
+        user_id=1,
+        session_id="session-1",
+    )
+
+    assert result.response == "已为您取消订单 ORDER20260401001。"
+    assert result.tool_calls == [
+        {"tool": "query_order", "success": True},
+        {"tool": "refund", "success": True},
+    ]
+    assert refund_tool.calls[0]["action"] == "cancel"
+    assert refund_tool.calls[0]["order_no"] == "ORDER20260401001"
+    assert len(model.calls) == 3
+
+
+async def test_search_knowledge_tool_produces_citations() -> None:
+    """图内知识检索的结果应转换为结构化引用。"""
+    knowledge_tool = FakeKnowledgeTool()
+    model = ScriptedChatModel(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "search_knowledge",
+                        "args": {"query": "商品可以退换吗"},
+                        "id": "call_1",
+                    }
+                ],
+            ),
+            AIMessage(content="7 天内可以无理由退换货。"),
+        ]
+    )
+    agent = MultiStepAgent(
+        chat_model=model, tools={"search_knowledge": knowledge_tool}
+    )
+
+    result = await agent.run(
+        user_message="商品可以退换吗",
+        history=[],
+        db=None,
+        user_id=1,
+        session_id="session-1",
+    )
+
+    assert result.tool_calls == [{"tool": "search_knowledge", "success": True}]
+    assert result.citations == [
+        {
+            "id": 1,
+            "category": "退换货政策",
+            "question": "商品可以退换吗",
+            "score": 0.93,
+        }
+    ]
 
 
 async def test_graph_failure_raises_typed_error() -> None:

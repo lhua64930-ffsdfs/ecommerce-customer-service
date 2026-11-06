@@ -80,3 +80,85 @@ class FakeOrderTool:
                 "required": [],
             },
         }
+
+
+class FakeKnowledgeTool:
+    """search_knowledge 的测试替身:返回固定知识条目。"""
+
+    name = "search_knowledge"
+    description = "检索知识库"
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    async def execute(self, params: dict[str, Any]) -> dict[str, Any]:
+        self.calls.append(params)
+        return {
+            "success": True,
+            "response": "根据知识库,7 天内可无理由退换货。",
+            "results": [
+                {
+                    "id": 1,
+                    "score": 0.93,
+                    "category": "退换货政策",
+                    "question": "商品可以退换吗",
+                    "answer": "7天内可无理由退换货",
+                }
+            ],
+            "source": "knowledge_base",
+        }
+
+    def get_schema(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "description": self.description,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "查询问题"},
+                    "category": {"type": "string", "description": "分类"},
+                },
+                "required": ["query"],
+            },
+        }
+
+
+class FakeRefundTool:
+    """refund 的测试替身:记录取消/退货动作,不访问数据库。"""
+
+    name = "refund"
+    description = "处理取消订单、退款退货"
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    async def execute(self, params: dict[str, Any]) -> dict[str, Any]:
+        self.calls.append(params)
+        action = params.get("action") or "consult"
+        order_no = params.get("order_no") or "ORDER20260401001"
+        return {
+            "success": True,
+            "action": action,
+            "order_no": order_no,
+            "order_status": "cancelled" if action == "cancel" else "paid",
+            "response": f"订单 {order_no} 已执行 {action}",
+        }
+
+    def get_schema(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "description": self.description,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["cancel", "return", "refund", "query"],
+                        "description": "操作类型",
+                    },
+                    "order_no": {"type": "string", "description": "订单号"},
+                    "reason": {"type": "string", "description": "原因"},
+                },
+                "required": ["action"],
+            },
+        }

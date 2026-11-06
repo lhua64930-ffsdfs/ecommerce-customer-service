@@ -14,6 +14,19 @@ from app.services.llm_service import LLMService
 
 
 @pytest.fixture(autouse=True)
+async def _fresh_redis_client() -> AsyncGenerator[None, None]:
+    """每个测试使用新的事件循环,重置 Redis 单例避免跨 loop 复用连接。"""
+    from app.utils import cache
+
+    cache._client = None
+    yield
+    try:
+        await cache.close_redis()
+    except Exception:  # noqa: BLE001 - 清理失败不阻塞测试
+        cache._client = None
+
+
+@pytest.fixture(autouse=True)
 def _no_real_chat_model() -> Iterator[None]:
     """禁用所有真实 LLM 调用,测试绝不访问 DeepSeek。
 

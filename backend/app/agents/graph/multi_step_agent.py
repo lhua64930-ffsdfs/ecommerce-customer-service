@@ -62,6 +62,7 @@ class MultiStepResult:
 
     response: str
     tool_calls: list[dict[str, Any]]
+    citations: list[dict[str, Any]]
 
 
 class MultiStepAgent:
@@ -122,6 +123,7 @@ class MultiStepAgent:
         return MultiStepResult(
             response=response,
             tool_calls=list(context.tool_calls),
+            citations=list(context.citations),
         )
 
     # ---------------- 图构建 ----------------
