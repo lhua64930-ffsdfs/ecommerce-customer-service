@@ -5,7 +5,7 @@
 ## 1. 总览
 
 ```text
-React SPA (Ant Design)
+静态 HTML/CSS/JS
         │  HTTP / SSE
         ▼
 FastAPI ── Chat API
@@ -43,7 +43,7 @@ FastAPI ── Chat API
 | 运行时 | `app/runtime/` | 售后事项、Agent 运行步骤、审批状态机与执行 |
 | 策略层 | `app/policies/` | policy-as-code 规则匹配与决策审计 |
 | 服务层 | `app/services/` | LLM、情感、意图、向量、混合检索、重排、证据闸、自检、记忆、知识飞轮 |
-| 数据层 | `app/models/`、`app/core/database.py` | ORM 与连接池(20 张表) |
+| 数据层 | `app/models/`、`app/core/database.py` | ORM 与连接池(22 张表) |
 | 基础设施 | MySQL / Redis / Milvus | 业务数据、缓存队列、向量 + BM25 索引 |
 
 ## 3. 一次对话的完整流程

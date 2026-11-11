@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>登录 · 售后智答</title>
+  <link rel="icon" href="/static/favicon.svg" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+  <div class="login-page">
+    <div class="card login-card">
+      <div class="brand"><span class="brand-mark">售</span><span>售后智答</span></div>
+      <h1>登录受理台</h1>
+      <p class="sub">售后客服 Agent · 管理后台</p>
+      <div id="login-alert" class="alert" style="display:none"></div>
+      <form id="login-form">
+        <div class="field">
+          <label for="username">账号</label>
+          <input class="input" id="username" name="username" autocomplete="username" required />
+        </div>
+        <div class="field">
+          <label for="password">密码</label>
+          <input class="input" id="password" name="password" type="password" autocomplete="current-password" required />
+        </div>
+        <button class="btn btn-primary" type="submit" style="width:100%">登录</button>
+      </form>
+      <div id="local-mode" style="display:none;margin-top:14px">
+        <button class="btn" id="local-enter" style="width:100%">进入本地演示</button>
+      </div>
+      <p class="demo">演示账号：demo_admin / admin123、demo_customer / demo123</p>
+    </div>
+  </div>
+  <script src="/static/js/common.js"></script>
+  <script src="/static/js/login.js"></script>
+</body>
+</html>

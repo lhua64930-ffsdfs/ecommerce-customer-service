@@ -9,7 +9,6 @@
 | 内存 | 8 GB 起,建议 16 GB(Milvus + 向量模型) |
 | 磁盘 | 10 GB 可用(镜像 + 模型缓存) |
 | Python | 3.10+(开发模式,建议 3.12/3.13) |
-| Node.js | 18+(开发模式,建议 20/22) |
 
 ## 2. 端口
 
@@ -19,7 +18,7 @@
 | 后端 API | 8000 |
 | MCP 工具服务 | 8001 知识/商品、8002 订单/售后(仅内部,不映射宿主机) |
 | Langfuse Web(可选自托管) | 3000 |
-| 前端开发服务器 | 5173 |
+| 前端页面(开发/生产) | 8000 / 8080(静态页面由后端或 nginx 托管) |
 | MySQL | 3306 |
 | Redis | 6379 |
 | Milvus gRPC | 19530 |
@@ -41,10 +40,8 @@ pip install -r requirements.txt
 copy .env.example .env
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
-# 3) 前端(另开终端)
-cd frontend
-npm install
-npm run dev
+# 3) 前端:无需单独启动,后端直接托管 frontend/static
+# 访问 http://127.0.0.1:8000/
 
 # 4) 可选:MCP 工具服务(另开两个终端)
 cd backend
@@ -54,7 +51,7 @@ python -m app.mcp aftersales    # 8002,另开终端
 # 然后在 backend/.env 设置 MCP_ENABLED=true,并重启后端
 ```
 
-访问 http://localhost:5173。健康检查:
+访问 http://127.0.0.1:8000/。健康检查:
 http://127.0.0.1:8001/health、http://127.0.0.1:8002/health。
 
 ## 4. 生产部署(Docker)

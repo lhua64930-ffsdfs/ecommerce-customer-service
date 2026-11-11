@@ -24,15 +24,11 @@ cd backend
 ./venv/Scripts/python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-### 启动前端(另开终端)
+### 打开前端
 
-```bash
-cd frontend
-npm install   # 首次
-npm run dev
-```
+前端是原生 HTML/CSS/JS,由后端直接托管,不需要单独启动或安装 Node:
 
-打开 http://localhost:5173。
+浏览器打开 http://127.0.0.1:8000/ 。
 
 ### 健康检查
 
@@ -451,11 +447,11 @@ docker exec -it cs-redis redis-cli DEL "rate:chat:sw:$SESSION_ID"
 
 | 页面 | 地址 | 看点 |
 | --- | --- | --- |
-| 聊天 | http://localhost:5173/ | 多轮对话、引用标签、售后确认卡片、快捷回复、情感提示 |
-| 数据看板 | http://localhost:5173/dashboard | 会话/消息/AI 解决率/转人工率、意图与情感分布 |
-| 知识库 | http://localhost:5173/knowledge | 增删改查、语义检索、知识飞轮待审队列 |
-| RAG 评测 | http://localhost:5173/rag-eval | 四策略 Recall/MRR、无答案拒答率 |
-| 会话记录 | http://localhost:5173/sessions | 列表 + 完整对话回放(含引用与审批状态) |
+| 聊天 | http://127.0.0.1:8000/ | 多轮对话、引用标签、售后确认卡片、快捷回复、情感提示 |
+| 数据看板 | http://127.0.0.1:8000/dashboard | 会话/消息/AI 解决率/转人工率、意图与情感分布 |
+| 知识库 | http://127.0.0.1:8000/knowledge | 增删改查、语义检索、知识飞轮待审队列 |
+| RAG 评测 | http://127.0.0.1:8000/rag-eval | 四策略 Recall/MRR、无答案拒答率 |
+| 会话记录 | http://127.0.0.1:8000/sessions | 列表 + 完整对话回放(含引用与审批状态) |
 
 也可以直接用接口:
 
@@ -466,7 +462,7 @@ curl -s "http://127.0.0.1:8000/api/v1/analytics/sessions?page=1&page_size=5"
 
 **讲解词**:
 
-> 前端 4 个页面覆盖了「对话 → 数据 → 知识运维 → 会话回放」的闭环;
+> 前端 7 个页面覆盖了「对话 → 数据 → 知识运维 → 会话回放」的闭环;
 > 看板指标直接聚合 MySQL 的 messages/sessions 表,不是静态假数据。
 
 ---
@@ -565,7 +561,7 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/feedback \
 
 ### 评测看板
 
-浏览器打开 http://localhost:5173/rag-eval,查看四策略 Recall/MRR 与拒答率;
+浏览器打开 http://127.0.0.1:8000/rag-eval,查看四策略 Recall/MRR 与拒答率;
 页面下方「后台作业」可以一键重跑检索评测、拒答评测、挖知识、导入手册,并回显日志。
 
 ## 8.3 场景 J:MCP 工具服务 + Langfuse 观测
@@ -770,4 +766,4 @@ docker exec cs-redis redis-cli ping
 
 - 确认后端在 8000 端口;
 - 检查浏览器 Network 面板的 CORS/404;
-- 前端开发代理配置见 `frontend/vite.config.ts`。
+- 页面脚本位于 `frontend/static/js/`,静态资源挂在 `/static` 下。

@@ -1,6 +1,6 @@
 # 售后智答(After-Sales Intelligent Q&A Platform)
 
-基于 **FastAPI + React + MySQL + Redis + Milvus + LangGraph + RAG + MCP** 的电商售后智能客服系统。
+基于 **FastAPI + HTML/CSS/JS + MySQL + Redis + Milvus + LangGraph + RAG + MCP** 的电商售后智能客服系统。
 覆盖意图识别、情感分析、知识库检索增强、多步 Agent 工具调用、复合任务办理、
 MCP 工具服务化、Langfuse 全链路观测、转人工、数据看板与知识库运营。
 
@@ -78,7 +78,7 @@ MCP 工具服务化、Langfuse 全链路观测、转人工、数据看板与知�
   本地重排把 Recall@1 从 0.9722 提升到 1.0000;证据不足会明确拒答,不硬编。
 - **RAG 可降级**:向量库或 Embedding 不可用时自动回退关键词 + bigram 检索,
   并带 30 秒冷却,避免每个请求重复重试已宕机的 Milvus。
-- **真实数据链路**:20 张 MySQL 表 + Redis + Milvus,不是前端 mock;
+- **真实数据链路**:22 张 MySQL 表 + Redis + Milvus,不是前端 mock;
   订单查询在工具层校验归属。
 - **安全工程**:订单归属校验、订单号+手机后四位核验、PII 脱敏、
   Redis 原子滑动窗口限流、审批与审计日志,密钥仅从环境变量注入。
@@ -128,7 +128,7 @@ MCP 工具服务化、Langfuse 全链路观测、转人工、数据看板与知�
 
 | 层 | 技术 |
 | --- | --- |
-| 前端 | React 18、TypeScript、Vite、Ant Design 5、Zustand、axios、ECharts |
+| 前端 | 原生 HTML5、CSS3、JavaScript(ES2020)、fetch / SSE,无构建步骤 |
 | 后端 | FastAPI、SQLAlchemy 2(async)、Pydantic 2、loguru |
 | 数据 | MySQL 8、Redis 7、Milvus 2.5(本地存储模式) |
 | AI | DeepSeek(OpenAI 兼容)、LangGraph + LangChain、sentence-transformers(BGE 向量 + bge-reranker 重排) |
@@ -136,13 +136,13 @@ MCP 工具服务化、Langfuse 全链路观测、转人工、数据看板与知�
 | 图状态 | LangGraph checkpointer:SQLite 默认,Postgres 可选 |
 | 可观测 | Langfuse 5.x(LangGraph 回调 + OpenAI generation 埋点) |
 | 安全 | PyJWT(HS256)、bcrypt、纯 ASGI 鉴权/限流中间件 |
-| 测试 | pytest、pytest-asyncio、Playwright |
+| 测试 | pytest、pytest-asyncio |
 
 ## 架构
 
 ```mermaid
 flowchart LR
-    U[用户] --> FE[React 18 + Ant Design]
+    U[用户] --> FE[静态 HTML/CSS/JS]
     FE -->|HTTP / SSE| API[FastAPI]
     API --> RL[Redis 滑动窗口限流]
     API --> PRE[指代消解 / 情感 / 意图]
@@ -196,7 +196,7 @@ after-sales-qa/
 │   │   ├── agents/          # Agent、6 个工具、工具注册表/执行引擎、LangGraph 多步图 + checkpointer、MCP 代理
 │   │   ├── mcp/             # 两个独立 MCP Server:知识/商品 8001、订单/售后 8002
 │   │   ├── core/            # 配置、数据库、种子、鉴权、熔断、限流、后台作业、Langfuse 观测
-│   │   ├── models/          # 20 张表的 ORM 模型(任务/审批/策略/核验/审计/飞轮/文档)
+│   │   ├── models/          # 22 张表的 ORM 模型(任务/审批/策略/核验/审计/飞轮/文档)
 │   │   ├── policies/        # 策略引擎:规则匹配 + 决策审计
 │   │   ├── runtime/         # 任务运行时:事项 / 运行步骤 / 审批执行
 │   │   ├── schemas/         # Pydantic 模型(含 citation / approval / interrupt)
@@ -209,13 +209,10 @@ after-sales-qa/
 │   ├── requirements.txt
 │   └── requirements-dev.txt
 ├── frontend/
-│   ├── src/
-│   │   ├── api/             # axios 封装(含审批/核验/飞轮)
-│   │   ├── components/      # 聊天气泡、引用标签、售后确认卡片、输入框、布局
-│   │   ├── pages/           # 聊天、登录、看板、知识库、RAG 评测、可观测、会话记录
-│   │   ├── stores/          # Zustand 状态(SSE 流式 + 审批决策)
-│   │   └── types/
-│   └── scripts/             # Playwright 冒烟测试与演示 GIF
+│   └── static/              # 原生 HTML/CSS/JS,无构建步骤
+│       ├── *.html           # 登录 / 聊天 / 看板 / 知识库 / 评测 / 可观测 / 会话
+│       ├── css/app.css
+│       └── js/              # 公共 API/Auth、各页面脚本、SSE 解析
 ├── config/                  # Agent 行为与售后策略配置
 ├── knowledge_base/          # 知识库 JSON 与 RAG 评测集
 ├── docker/                  # 开发/生产/Langfuse compose、Dockerfile、nginx
@@ -264,15 +261,15 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 首次启动会自动建表并写入演示数据(用户、意图、商品、订单、知识库),并向量化知识条目。
 
-### 3. 启动前端
+### 3. 打开前端
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+后端已直接托管静态页面,无需安装 Node/构建:
 
-访问 http://localhost:5173。
+- 受理台:http://127.0.0.1:8000/
+- 登录(开启鉴权时):http://127.0.0.1:8000/login
+- 可观测:http://127.0.0.1:8000/observability
+
+Docker 部署入口为 http://localhost:8080。
 
 ### 4. 配置 LLM(可选)
 
@@ -332,27 +329,15 @@ pip install -r requirements-dev.txt   # 已装可跳过
 - 测试通过 FastAPI `dependency_overrides` 注入脚本化 Fake ChatModel,
   并强制 `LLMService` 进入 mock,不会访问真实 DeepSeek。
 
-### 浏览器冒烟测试
+### 静态页面自检
 
-需要后端(8000)与前端(5173)同时运行;使用系统已安装的 Edge。
+后端启动后直接访问 http://127.0.0.1:8000/ :
 
-```bash
-cd frontend
-node scripts/smoke.mjs
-```
+- 聊天页:发消息、订单查询、RAG 引用、订单选择/工单确认卡;
+- 管理页:看板 / 知识库 / RAG 评测 / 可观测 / 会话记录(需 admin 或本地演示模式);
+- 登录页:开启 `AUTH_ENABLED=true` 后访问 `/login`。
 
-覆盖:欢迎语 → 订单查询(PII 脱敏)→ RAG 引用(SSE 流式)→ 投诉转人工 →
-数据看板 → 知识库(含知识飞轮待审队列)→ 会话记录抽屉。
-
-### 演示 GIF
-
-```bash
-cd frontend
-node scripts/demo-gif.mjs
-```
-
-驱动浏览器完成订单查询、RAG 引用与转人工,截图帧由 Pillow 合成为
-`docs/images/demo.gif`。
+演示 GIF 已生成于 `docs/images/demo.gif`,不需要 Node/Playwright。
 
 ## RAG 评测
 
@@ -617,7 +602,7 @@ python scripts/evaluate_refusal.py --self-check
 
 | 选型 | 实现 | 说明 |
 | --- | --- | --- |
-| 前端 | React 18 + Ant Design 5 + Zustand | 组件生态成熟,状态管理轻量 |
+| 前端 | 原生 HTML/CSS/JS + fetch/SSE | 无构建步骤,后端/nginx 直接托管,部署简单 |
 | 向量库 | Milvus 2.5.4(本地存储模式) | 适配 Python 3.13;单机部署无需 MinIO |
 | Embedding | 本地 BGE small zh v1.5(512 维) | 中文语义检索,可离线运行 |
 | LLM | DeepSeek(OpenAI 兼容) | 未配置 Key 时自动进入 mock,便于开发与测试 |

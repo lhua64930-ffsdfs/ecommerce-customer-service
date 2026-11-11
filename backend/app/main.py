@@ -2,9 +2,13 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Any
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 import app.models  # noqa: F401 - 注册全部 ORM 模型
@@ -81,6 +85,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+STATIC_DIR = Path(__file__).resolve().parents[2] / "frontend" / "static"
+if STATIC_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
 app.add_middleware(AuthMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(
@@ -148,9 +156,46 @@ app.include_router(
 )
 
 
-@app.get("/")
-async def root() -> dict:
+def _page(name: str) -> Any:
+    path = STATIC_DIR / name
+    if path.is_file():
+        return FileResponse(path)
     return {"message": "售后智答 API", "version": settings.VERSION}
+
+
+@app.get("/", include_in_schema=False)
+async def root() -> Any:
+    return _page("index.html")
+
+
+@app.get("/login", include_in_schema=False)
+async def login_page() -> Any:
+    return _page("login.html")
+
+
+@app.get("/dashboard", include_in_schema=False)
+async def dashboard_page() -> Any:
+    return _page("dashboard.html")
+
+
+@app.get("/knowledge", include_in_schema=False)
+async def knowledge_page() -> Any:
+    return _page("knowledge.html")
+
+
+@app.get("/rag-eval", include_in_schema=False)
+async def rag_eval_page() -> Any:
+    return _page("rag-eval.html")
+
+
+@app.get("/observability", include_in_schema=False)
+async def observability_page() -> Any:
+    return _page("observability.html")
+
+
+@app.get("/sessions", include_in_schema=False)
+async def sessions_page() -> Any:
+    return _page("sessions.html")
 
 
 @app.get("/health")
