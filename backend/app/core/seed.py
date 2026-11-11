@@ -20,6 +20,7 @@ from app.models.knowledge import Knowledge
 from app.models.order import Order
 from app.models.product import Product
 from app.models.user import User
+from app.policies.engine import sync_rules_from_config
 from app.services.intent_service import IntentService
 from app.services.rag_service import RAGService
 from app.utils.logger import logger
@@ -43,6 +44,7 @@ async def seed_all(db: AsyncSession) -> None:
     await _seed_intents(db)
     await _seed_products(db)
     await _seed_orders(db, user.id)
+    await sync_rules_from_config(db)
     await db.commit()
 
     knowledge_items = await _seed_knowledge(db)
@@ -178,12 +180,6 @@ async def _seed_products(db: AsyncSession) -> None:
 
 
 async def _seed_orders(db: AsyncSession, user_id: int) -> None:
-    total = await db.scalar(
-        select(func.count()).select_from(Order).where(Order.user_id == user_id)
-    )
-    if total:
-        return
-
     orders = [
         Order(
             order_no="ORDER20260315001",
@@ -229,10 +225,36 @@ async def _seed_orders(db: AsyncSession, user_id: int) -> None:
             shipped_at=datetime(2026, 3, 11, 10, 0),
             delivered_at=datetime(2026, 3, 13, 15, 30),
         ),
+        Order(
+            order_no="ORDER20260320001",
+            user_id=user_id,
+            status="pending",
+            total_amount=Decimal("99.00"),
+            pay_amount=None,
+            shipping_address={"province": "浙江省", "city": "杭州市", "detail": "西湖区文三路199号"},
+            receiver_name="赵女士",
+            receiver_phone="13600001234",
+            remark="USB-C 数据线 × 2",
+            created_at=datetime(2026, 3, 20, 9, 0),
+        ),
     ]
-    db.add_all(orders)
+
+    existing = set(
+        (
+            await db.execute(
+                select(Order.order_no).where(Order.user_id == user_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    missing = [order for order in orders if order.order_no not in existing]
+    if not missing:
+        return
+
+    db.add_all(missing)
     await db.flush()
-    logger.info("已写入 {} 个演示订单", len(orders))
+    logger.info("已补齐 {} 个演示订单", len(missing))
 
 
 async def _seed_knowledge(db: AsyncSession) -> list[Knowledge]:

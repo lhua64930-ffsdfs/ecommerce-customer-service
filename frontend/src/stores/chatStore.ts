@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { chatApi } from '../api/chat'
-import type { Message, SentimentType } from '../types/chat'
+import type { Message, PendingApproval, SentimentType } from '../types/chat'
 
 const makeId = (): string =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -27,6 +27,16 @@ interface ChatState {
   initSession: () => Promise<void>
   sendMessage: (content: string) => Promise<void>
   loadHistory: (sessionId: string) => Promise<void>
+  verifyApprovalOrder: (
+    orderNo: string,
+    phoneLast4: string,
+  ) => Promise<{ success: boolean; reason?: string }>
+  decideApproval: (
+    messageId: string,
+    approvalId: string,
+    decision: 'approve' | 'reject',
+    options?: { reviewer?: string; reason?: string },
+  ) => Promise<{ success: boolean; code?: string; message: string }>
   clearError: () => void
 }
 
@@ -91,6 +101,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         sentiment: result.sentiment,
         sentimentScore: result.sentiment_score,
         citations: result.citations ?? [],
+        pendingApproval: result.pending_approval ?? undefined,
       }
       set((state) => ({
         messages: [...state.messages, botMessage],
@@ -128,10 +139,92 @@ export const useChatStore = create<ChatState>((set, get) => ({
         sentiment: item.sentiment ?? undefined,
         sentimentScore: item.sentiment_score ?? undefined,
         citations: item.citations ?? [],
+        pendingApproval: item.pending_approval ?? undefined,
       }))
       set({ sessionId, messages })
     } catch (error) {
       set({ error: errorMessage(error) })
+    }
+  },
+
+  async verifyApprovalOrder(orderNo: string, phoneLast4: string) {
+    const sessionId = get().sessionId
+    if (!sessionId) return { success: false, reason: '会话未就绪' }
+    try {
+      const result = await chatApi.verifyOrder({
+        session_id: sessionId,
+        order_no: orderNo,
+        phone_last4: phoneLast4,
+      })
+      return { success: result.success, reason: result.reason }
+    } catch (error) {
+      return { success: false, reason: errorMessage(error) }
+    }
+  },
+
+  async decideApproval(
+    messageId: string,
+    approvalId: string,
+    decision: 'approve' | 'reject',
+    options?: { reviewer?: string; reason?: string },
+  ) {
+    const sessionId = get().sessionId
+    if (!sessionId) return { success: false, message: '会话未就绪' }
+
+    try {
+      const result =
+        decision === 'approve'
+          ? await chatApi.approveApproval(approvalId, {
+              session_id: sessionId,
+              reviewer: options?.reviewer,
+            })
+          : await chatApi.rejectApproval(approvalId, {
+              session_id: sessionId,
+              reason: options?.reason,
+              reviewer: options?.reviewer,
+            })
+
+      const status = result.status || (decision === 'approve' ? 'executed' : 'rejected')
+      const resultMessage =
+        result.result?.message ||
+        (decision === 'approve'
+          ? '售后申请已处理,请查看订单状态。'
+          : '已拒绝本次售后申请。')
+
+      set((state) => ({
+        messages: [
+          ...state.messages.map((message) =>
+            message.id === messageId && message.pendingApproval
+              ? {
+                  ...message,
+                  pendingApproval: {
+                    ...message.pendingApproval,
+                    status,
+                  } as PendingApproval,
+                }
+              : message,
+          ),
+          {
+            id: makeId(),
+            senderType: 'bot',
+            content: resultMessage,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }))
+      return { success: true, message: resultMessage }
+    } catch (error) {
+      const detail = (error as { response?: { data?: { detail?: unknown } } })?.response
+        ?.data?.detail
+      if (detail && typeof detail === 'object') {
+        const parsed = detail as { code?: string; message?: string }
+        return {
+          success: false,
+          code: parsed.code,
+          message: parsed.message || '处理失败,请稍后重试',
+        }
+      }
+      return { success: false, message: errorMessage(error) }
     }
   },
 

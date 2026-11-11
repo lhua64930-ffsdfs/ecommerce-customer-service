@@ -13,7 +13,7 @@ from app.agents.graph.multi_step_agent import (
 from tests.support.fake_chat_model import (
     FakeKnowledgeTool,
     FakeOrderTool,
-    FakeRefundTool,
+    FakeProposeTool,
     ScriptedChatModel,
 )
 
@@ -58,10 +58,10 @@ async def test_order_query_runs_tool_and_returns_multi_step_result() -> None:
     assert "已支付" in str(observation.content)
 
 
-async def test_compound_order_then_cancel_runs_two_tools() -> None:
-    """复合任务:先查订单状态,再调用 refund 取消。"""
+async def test_compound_order_then_cancel_submits_approval() -> None:
+    """复合任务:先查订单状态,再提交取消申请(不直接写库)。"""
     order_tool = FakeOrderTool()
-    refund_tool = FakeRefundTool()
+    propose_tool = FakeProposeTool()
     model = ScriptedChatModel(
         responses=[
             AIMessage(
@@ -78,18 +78,21 @@ async def test_compound_order_then_cancel_runs_two_tools() -> None:
                 content="",
                 tool_calls=[
                     {
-                        "name": "refund",
+                        "name": "propose_after_sales_action",
                         "args": {"action": "cancel", "order_no": "ORDER20260401001"},
                         "id": "call_2",
                     }
                 ],
             ),
-            AIMessage(content="已为您取消订单 ORDER20260401001。"),
+            AIMessage(content="已为您生成取消申请,请在确认卡片中确认。"),
         ]
     )
     agent = MultiStepAgent(
         chat_model=model,
-        tools={"query_order": order_tool, "refund": refund_tool},
+        tools={
+            "query_order": order_tool,
+            "propose_after_sales_action": propose_tool,
+        },
     )
 
     result = await agent.run(
@@ -100,13 +103,15 @@ async def test_compound_order_then_cancel_runs_two_tools() -> None:
         session_id="session-1",
     )
 
-    assert result.response == "已为您取消订单 ORDER20260401001。"
+    assert result.response == "已为您生成取消申请,请在确认卡片中确认。"
     assert result.tool_calls == [
         {"tool": "query_order", "success": True},
-        {"tool": "refund", "success": True},
+        {"tool": "propose_after_sales_action", "success": True},
     ]
-    assert refund_tool.calls[0]["action"] == "cancel"
-    assert refund_tool.calls[0]["order_no"] == "ORDER20260401001"
+    assert propose_tool.calls[0]["action"] == "cancel"
+    assert propose_tool.calls[0]["order_no"] == "ORDER20260401001"
+    assert result.pending_approval is not None
+    assert result.pending_approval["action"] == "cancel"
     assert len(model.calls) == 3
 
 

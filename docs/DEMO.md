@@ -64,7 +64,7 @@ curl -s http://127.0.0.1:8000/health
 修改 `.env` 后需要重启后端。
 
 > 演示复合任务与多步订单查询时,建议先配置真实 Key 并冒烟一次,
-> 确认模型会按预期调用 `query_order` / `refund`。未配置 Key 时系统会回退单步 Agent,
+> 确认模型会按预期调用 `query_order` / `propose_after_sales_action`。未配置 Key 时系统会回退单步 Agent,
 > 订单查询、RAG 引用与转人工仍然可用。
 
 ---
@@ -123,6 +123,8 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/chat/send \
   "need_transfer": false,
   "tool_calls": [{ "tool": "query_order", "success": true }],
   "citations": [],
+  "pending_approval": null,
+  "run_id": "a1b2c3d4e5f6...",
   "agent_mode": "multi_step"
 }
 ```
@@ -130,7 +132,7 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/chat/send \
 **讲解词**:
 
 > 这条请求被识别为 `order_query`,进入 LangGraph:
-> 模型节点看到 6 个工具,决定调用 `query_order`;
+> 模型节点看到只读工具和售后申请工具,决定调用 `query_order`;
 > 工具节点执行后把订单结果回传给模型;模型再生成最终回复。
 > 响应里的 `agent_mode=multi_step` 和 `tool_calls` 就是这条链路的证据。
 > 订单详情中的手机号与地址已经脱敏。
@@ -139,15 +141,16 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/chat/send \
 
 | 订单号 | 状态 | 用途 |
 | --- | --- | --- |
-| `ORDER20260401001` | `paid`(已支付,待发货) | 订单查询 / 取消场景 |
-| `ORDER20260315001` | `shipped`(已发货) | 物流查询 / 退货场景 |
+| `ORDER20260401001` | `paid`(已支付,待发货) | 订单查询 / 取消审批 |
+| `ORDER20260315001` | `shipped`(已发货) | 物流查询 / 退货转人工 |
 | `ORDER20260310005` | `delivered`(已收货) | 退货场景 |
+| `ORDER20260320001` | `pending`(待支付,¥99) | 低风险自动执行 |
 
 ---
 
-## 3. 场景 B:复合任务(查订单 → 取消)
+## 3. 场景 B:复合任务(查订单 → 提交取消申请 → 核验 → 审批执行)
 
-一条消息里同时完成查询与取消:
+一条消息里完成查询与取消**申请**。模型不会直接改订单:
 
 ```bash
 curl -s -X POST http://127.0.0.1:8000/api/v1/chat/send \
@@ -159,27 +162,80 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/chat/send \
 
 ```json
 {
-  "response": "已为您取消订单 ORDER20260401001...",
+  "response": "已为您提交取消申请...请在确认卡片中确认",
   "tool_calls": [
     { "tool": "query_order", "success": true },
-    { "tool": "refund", "success": true }
+    { "tool": "propose_after_sales_action", "success": true }
   ],
+  "pending_approval": {
+    "approval_id": "APV...",
+    "action": "cancel",
+    "order_no": "ORDER20260401001",
+    "summary": "取消订单 ORDER20260401001,退款 ¥2699.00 原路退回",
+    "risk_level": "medium",
+    "status": "pending",
+    "requires_verification": true,
+    "requires_human": false
+  },
   "agent_mode": "multi_step"
 }
 ```
 
+先核验订单(订单号 + 手机后四位),再确认执行:
+
+```bash
+APPROVAL_ID="从响应中复制 pending_approval.approval_id"
+
+curl -s -X POST http://127.0.0.1:8000/api/v1/chat/verify-order \
+  -H "Content-Type: application/json" \
+  -d "{\"session_id\":\"$SESSION_ID\",\"order_no\":\"ORDER20260401001\",\"phone_last4\":\"1234\"}"
+
+curl -s -X POST http://127.0.0.1:8000/api/v1/chat/approvals/$APPROVAL_ID/approve \
+  -H "Content-Type: application/json" \
+  -d "{\"session_id\":\"$SESSION_ID\"}"
+```
+
+预期:
+
+```json
+{
+  "success": true,
+  "status": "executed",
+  "result": {
+    "success": true,
+    "message": "已取消订单 ORDER20260401001,退款将在 1-3 个工作日内原路退回",
+    "order_status": "cancelled"
+  }
+}
+```
+
+再次调用 approve 会返回 `already_executed`,不会重复执行。
+
 **讲解词**:
 
-> 模型先调用 `query_order` 读取真实订单状态,再调用 `refund(action=cancel)`。
-> 取消工具只允许「待支付 / 已支付」订单,已发货订单会引导退货而不是误取消;
-> 取消写入 MySQL,并做了幂等处理,重复调用不会重复扣减或报错。
+> 模型先调用 `query_order` 读取真实状态,再调用 `propose_after_sales_action`
+> 生成审批单;它没有直接写库的权限。
+> 策略引擎根据订单状态和金额判定:当前是中风险,需要用户确认;
+> 用户确认前还必须用订单号 + 手机后四位核验身份。
+> 确认后审批服务重新校验状态并执行取消,全过程写入事项、审批、审计和 Agent 步骤。
 
-已发货订单演示退货路径(不会写库,返回退货流程):
+已发货订单演示退货转人工(高风险需要客服工号):
 
 ```bash
 curl -s -X POST http://127.0.0.1:8000/api/v1/chat/send \
   -H "Content-Type: application/json" \
   -d "{\"session_id\":\"$SESSION_ID\",\"content\":\"查订单 ORDER20260315001 然后我要退货\"}"
+```
+
+响应中的 `pending_approval.requires_human` 为 `true`;核验后调用 approve 时必须带
+`"reviewer": "A001"`,否则返回 `require_human_review`。
+
+低风险自动执行演示(待支付 ¥99 订单,核验后由策略自动取消):
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/v1/chat/send \
+  -H "Content-Type: application/json" \
+  -d "{\"session_id\":\"$SESSION_ID\",\"content\":\"取消订单 ORDER20260320001\"}"
 ```
 
 重复演示前恢复种子订单状态:
@@ -354,10 +410,10 @@ docker exec -it cs-redis redis-cli DEL "rate:chat:sw:$SESSION_ID"
 
 | 页面 | 地址 | 看点 |
 | --- | --- | --- |
-| 聊天 | http://localhost:5173/ | 多轮对话、引用标签、快捷回复、情感提示 |
+| 聊天 | http://localhost:5173/ | 多轮对话、引用标签、售后确认卡片、快捷回复、情感提示 |
 | 数据看板 | http://localhost:5173/dashboard | 会话/消息/AI 解决率/转人工率、意图与情感分布 |
 | 知识库 | http://localhost:5173/knowledge | 增删改查、语义检索、向量索引状态 |
-| 会话记录 | http://localhost:5173/sessions | 列表 + 完整对话回放(含引用) |
+| 会话记录 | http://localhost:5173/sessions | 列表 + 完整对话回放(含引用与审批状态) |
 
 也可以直接用接口:
 
@@ -377,9 +433,9 @@ curl -s "http://127.0.0.1:8000/api/v1/analytics/sessions?page=1&page_size=5"
 
 | 时间 | 动作 | 一句话讲解 |
 | --- | --- | --- |
-| 0:00 | 打开聊天页 | 电商售后 + RAG + 6 工具 + LangGraph 多步 Agent |
+| 0:00 | 打开聊天页 | 电商售后 + RAG + 只读工具 + 售后申请 + LangGraph 多步 Agent |
 | 0:30 | 场景 A:查订单 | `agent_mode=multi_step`,`tool_calls` 是证据 |
-| 1:10 | 场景 B:查订单后取消 | 模型先查再取消,写库且幂等 |
+| 1:10 | 场景 B:查订单后取消 | 模型只提申请;核验后确认才执行,幂等 |
 | 1:50 | 场景 C:RAG 引用 | 回答下方展示知识来源 |
 | 2:20 | 场景 D:评测脚本 | Recall@1/3/5 可复现 |
 | 2:50 | 场景 E:投诉 | 负向情感、安抚、转人工 |
@@ -395,7 +451,7 @@ curl -s "http://127.0.0.1:8000/api/v1/analytics/sessions?page=1&page_size=5"
 
 - 不要展示真实 `LLM_API_KEY`、`.env` 内容或带 Key 的终端历史;
 - 不要把自己的真实手机号/地址写进数据库,演示数据必须是虚构种子;
-- 复合任务会真实修改订单状态,重复演示前执行 `reset_demo_data.py`;
+- 复合任务需要核验订单并确认后才真实修改订单状态;重复演示前执行 `reset_demo_data.py`;
 - 高频压测会触发限流;需要时等待窗口滚动或删除对应 Redis key;
 - 截图/GIF 使用仓库脚本生成,确保界面与代码版本一致。
 
@@ -424,9 +480,10 @@ cd backend
 
 ### 复合任务没有取消
 
-- 确认配置了真实 Key,并在日志中看到多步图执行;
-- 确认订单号属于当前会话用户,且状态为 `pending` / `paid`;
-- 若订单已发货,系统会返回退货流程而不是取消,这是预期行为。
+- 先看响应里有没有 `pending_approval`:有申请单说明链路正常,只是还没确认;
+- 未核验订单时调用 approve 会返回 `require_verification`,先调用 `verify-order`;
+- 高风险申请需要 `reviewer` 客服工号,否则返回 `require_human_review`;
+- 若订单已发货,策略会拒绝取消并建议退货,这是预期行为。
 
 ### Milvus 不健康
 

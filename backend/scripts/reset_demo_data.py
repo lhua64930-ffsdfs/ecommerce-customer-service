@@ -19,6 +19,7 @@ DEMO_ORDER_STATUS = {
     "ORDER20260315001": "shipped",
     "ORDER20260401001": "paid",
     "ORDER20260310005": "delivered",
+    "ORDER20260320001": "pending",
 }
 
 

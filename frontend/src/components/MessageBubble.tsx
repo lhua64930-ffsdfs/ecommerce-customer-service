@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import ApprovalCard from './ApprovalCard'
 import type { Message } from '../types/chat'
 import { formatTime } from '../utils/formatTime'
 
@@ -12,21 +13,42 @@ interface Props {
   message: Message
 }
 
-// 只识别前后为行首/行尾/空白/常见标点的 **加粗**;
-// 避免把脱敏串里的 ** 张** 138****6789 误判为 Markdown。
-const BOLD_PATTERN =
-  /(?<=^|[\s：:，,。.;；、\-—()（）])\*\*([^*\n]+?)\*\*(?=$|[\s：:，,。.;；、\-—()（）])/gm
+const BOLD_CANDIDATE = /\*\*([^*\n]+?)\*\*/g
+const CJK_PATTERN = /[一-龥]/
+const BOUNDARY_PATTERN = /[\s：:，,。.;；、\-—()（）]/
 
-/** 轻量渲染 LLM 常用的 **加粗** 语法,其余内容保持纯文本(React 自动转义)。 */
+const isBoundary = (char: string | undefined): boolean =>
+  !char || BOUNDARY_PATTERN.test(char)
+
+/**
+ * 轻量渲染 LLM 常用的 **加粗** 语法。
+ * 只接受两类:
+ * 1. 标准 Markdown 边界(前后是空白/标点/行首行尾);
+ * 2. 中文语境里紧贴汉字的强调(前后至少一侧是汉字,内容也含汉字)。
+ * 这样既保留中文加粗,又不会把脱敏串 `张** 138****6789` 误判成加粗。
+ */
 function renderContent(content: string): ReactNode[] {
   const nodes: ReactNode[] = []
   let lastIndex = 0
 
-  for (const match of content.matchAll(BOLD_PATTERN)) {
+  for (const match of content.matchAll(BOLD_CANDIDATE)) {
     const index = match.index ?? 0
+    const text = match[1]
+    const before = index > 0 ? content[index - 1] : undefined
+    const afterIndex = index + match[0].length
+    const after = afterIndex < content.length ? content[afterIndex] : undefined
+
+    const standardMarkdown = isBoundary(before) && isBoundary(after)
+    const cjkEmphasis =
+      Boolean(before && CJK_PATTERN.test(before)) &&
+      CJK_PATTERN.test(text) &&
+      text.length >= 2
+
+    if (!standardMarkdown && !cjkEmphasis) continue
+
     if (index > lastIndex) nodes.push(content.slice(lastIndex, index))
-    nodes.push(<strong key={`bold-${index}`}>{match[1]}</strong>)
-    lastIndex = index + match[0].length
+    nodes.push(<strong key={`bold-${index}`}>{text}</strong>)
+    lastIndex = afterIndex
   }
   if (lastIndex < content.length) nodes.push(content.slice(lastIndex))
   return nodes
@@ -83,6 +105,10 @@ export default function MessageBubble({ message }: Props) {
               </span>
             ))}
           </div>
+        )}
+
+        {!isUser && message.pendingApproval && (
+          <ApprovalCard message={message} />
         )}
 
         <div className="message-time">{formatTime(message.createdAt)}</div>

@@ -93,21 +93,32 @@ try {
   )
   await page.screenshot({ path: `${SHOT_DIR}/sessions.png` })
 
-  // 可选:真实 LLM 模式下演示「查订单 → 取消」复合任务,并单独截图
+  // 可选:真实 LLM 模式下演示「查订单 → 提交取消申请 → 核验 → 确认执行」
   if (process.env.COMPOUND_DEMO === '1') {
     await page.goto(BASE, { waitUntil: 'domcontentloaded' })
     await page.waitForSelector('text=智能客服小e', { timeout: 15000 })
     await page.fill('textarea', '查订单 ORDER20260401001 然后帮我取消')
     await page.keyboard.press('Enter')
-    await page
-      .locator('.bubble-bot', { hasText: 'ORDER20260401001' })
-      .last()
-      .waitFor({ state: 'visible', timeout: 90000 })
-    await page.waitForTimeout(2000)
+
+    await page.waitForSelector('.approval-card', { timeout: 90000 })
     await scrollToBottom()
-    const compoundText = await page.locator('body').innerText()
-    console.log('COMPOUND_OK:', compoundText.includes('取消'))
+    const cardText = await page.locator('.approval-card').first().innerText()
+    console.log('APPROVAL_PENDING:', cardText.includes('待确认'))
+    console.log('APPROVAL_SUMMARY_OK:', cardText.includes('ORDER20260401001'))
     await page.screenshot({ path: `${SHOT_DIR}/chat-cancel.png` })
+
+    await page
+      .locator('.approval-card input[aria-label="手机号后四位"]')
+      .fill('1234')
+    await page.getByRole('button', { name: '核验订单' }).click()
+    await page.waitForTimeout(1000)
+    await page.locator('.approval-card .ant-btn-primary').first().click()
+
+    await page.waitForSelector('.approval-card.is-closed', { timeout: 30000 })
+    await scrollToBottom()
+    const closedText = await page.locator('.approval-card').first().innerText()
+    console.log('APPROVAL_EXECUTED:', closedText.includes('已执行'))
+    await page.screenshot({ path: `${SHOT_DIR}/chat-cancel-executed.png` })
   }
 
   console.log('PAGE_ERRORS:', errors.length ? JSON.stringify(errors) : 'none')

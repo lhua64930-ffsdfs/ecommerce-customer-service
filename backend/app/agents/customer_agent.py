@@ -1,6 +1,7 @@
 """电商客服 Agent:情感 + 意图 + 工具/RAG 的完整决策链。"""
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,6 +60,8 @@ class CustomerServiceAgent(BaseAgent):
 
         tool_calls: list[dict[str, Any]] = []
         citations: list[dict[str, Any]] = []
+        run_steps: list[dict[str, Any]] = []
+        pending_approval: dict[str, Any] | None = None
         need_transfer = False
         agent_mode = AgentMode.SINGLE_STEP
         response: str | None = None
@@ -83,6 +86,8 @@ class CustomerServiceAgent(BaseAgent):
                     response = multi_result.response
                     tool_calls = list(multi_result.tool_calls)
                     citations = list(multi_result.citations)
+                    pending_approval = multi_result.pending_approval
+                    run_steps = list(multi_result.steps)
                     agent_mode = AgentMode.MULTI_STEP
                     need_transfer = any(
                         call.get("tool") == "transfer_human"
@@ -93,6 +98,7 @@ class CustomerServiceAgent(BaseAgent):
         if response is None:
             try:
                 if intent.handler_type == "transfer":
+                    started = time.perf_counter()
                     result = await self.tools["transfer_human"].execute(
                         self._tool_params(message)
                     )
@@ -101,15 +107,64 @@ class CustomerServiceAgent(BaseAgent):
                     tool_calls.append(
                         {"tool": "transfer_human", "success": result.get("success", False)}
                     )
+                    run_steps.append(
+                        {
+                            "step_type": "tool",
+                            "name": "transfer_human",
+                            "input": {"reason": message[:100]},
+                            "output": {
+                                "success": bool(result.get("success")),
+                                "response": str(result.get("response", ""))[:300],
+                            },
+                            "success": bool(result.get("success")),
+                            "latency_ms": int((time.perf_counter() - started) * 1000),
+                        }
+                    )
                 elif intent.handler_type == "tool":
-                    response, tool_calls = await self._handle_with_tools(intent, message)
+                    response, tool_calls, pending_approval, step = (
+                        await self._handle_with_tools(intent, message)
+                    )
+                    if step is not None:
+                        run_steps.append(step)
                 elif intent.handler_type == "rag":
+                    started = time.perf_counter()
                     response, citations = await self._handle_with_rag(message)
+                    run_steps.append(
+                        {
+                            "step_type": "tool",
+                            "name": "rag_retrieve",
+                            "input": {"query": message[:200]},
+                            "output": {"citations": len(citations)},
+                            "success": True,
+                            "latency_ms": int((time.perf_counter() - started) * 1000),
+                        }
+                    )
                 else:
+                    started = time.perf_counter()
                     response = await self._handle_with_llm(message)
+                    run_steps.append(
+                        {
+                            "step_type": "model",
+                            "name": "llm_reply",
+                            "input": {"message": message[:200]},
+                            "output": {"response": response[:300]},
+                            "success": True,
+                            "latency_ms": int((time.perf_counter() - started) * 1000),
+                        }
+                    )
             except Exception as exc:  # noqa: BLE001 - 单条消息失败不能拖垮接口
                 logger.exception("Agent 处理消息失败: {}", exc)
                 response = "抱歉,系统繁忙,请稍后再试,或回复「转人工」联系客服。"
+                run_steps.append(
+                    {
+                        "step_type": "model",
+                        "name": "agent_error",
+                        "input": {},
+                        "output": {"error": str(exc)[:300]},
+                        "success": False,
+                        "latency_ms": 0,
+                    }
+                )
 
         response = self._add_sentiment_prefix(response, sentiment)
 
@@ -129,6 +184,8 @@ class CustomerServiceAgent(BaseAgent):
             "need_transfer": need_transfer,
             "tool_calls": tool_calls,
             "citations": citations,
+            "pending_approval": pending_approval,
+            "run_steps": run_steps,
             "agent_mode": agent_mode.value,
         }
 
@@ -151,11 +208,12 @@ class CustomerServiceAgent(BaseAgent):
     # ---------------- 路由处理 ----------------
     async def _handle_with_tools(
         self, intent: IntentResult, message: str
-    ) -> tuple[str, list[dict[str, Any]]]:
+    ) -> tuple[str, list[dict[str, Any]], dict[str, Any] | None, dict[str, Any] | None]:
         mapping: dict[str, tuple[str, dict[str, Any]]] = {
             "order_query": ("query_order", {}),
-            "cancel_order": ("refund", {"action": "cancel"}),
-            "refund_request": ("refund", {"action": "refund"}),
+            # 售后写操作先走申请:模型/单步 Agent 都不直接改订单
+            "cancel_order": ("propose_after_sales_action", {"action": "cancel"}),
+            "refund_request": ("propose_after_sales_action", {"action": "refund"}),
             "order_modify": (
                 "create_ticket",
                 {"type": "consult", "title": "订单修改申请", "content": message},
@@ -163,18 +221,52 @@ class CustomerServiceAgent(BaseAgent):
         }
         tool_name, extra = mapping.get(intent.intent_code, ("", {}))
         if not tool_name:
-            return await self._handle_with_llm(message), []
+            started = time.perf_counter()
+            response = await self._handle_with_llm(message)
+            return (
+                response,
+                [],
+                None,
+                {
+                    "step_type": "model",
+                    "name": "llm_reply",
+                    "input": {"message": message[:200]},
+                    "output": {"response": response[:300]},
+                    "success": True,
+                    "latency_ms": int((time.perf_counter() - started) * 1000),
+                },
+            )
 
         order_no = next(
             (entity.value for entity in intent.entities if entity.type == "order_no"), None
         )
+        started = time.perf_counter()
         result = await self.tools[tool_name].execute(
             self._tool_params(message, order_no=order_no, **extra)
         )
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        success = bool(result.get("success"))
+        pending = result.get("proposal")
+        step = {
+            "step_type": "tool",
+            "name": tool_name,
+            "input": {**extra, **({"order_no": order_no} if order_no else {})},
+            "output": {
+                "success": success,
+                "decision": result.get("decision"),
+                "error_code": result.get("error_code"),
+                "response": str(result.get("response", ""))[:300],
+            },
+            "success": success,
+            "latency_ms": latency_ms,
+        }
         logger.info("工具调用: {} success={}", tool_name, result.get("success"))
-        return result.get("response", "处理完成"), [
-            {"tool": tool_name, "success": bool(result.get("success"))}
-        ]
+        return (
+            result.get("response", "处理完成"),
+            [{"tool": tool_name, "success": success}],
+            pending,
+            step,
+        )
 
     async def _handle_with_rag(
         self, message: str

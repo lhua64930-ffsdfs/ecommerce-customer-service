@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, Literal
 
 from langchain_core.tools import StructuredTool
@@ -76,11 +77,15 @@ def build_lc_tools(
             _name: str = name,
             **kwargs: Any,
         ) -> str:
+            started = time.perf_counter()
             try:
                 result = await _tool.execute(context.tool_params(**kwargs))
             except Exception as exc:  # noqa: BLE001 - 工具异常交给模型判断下一步
                 result = tool_error_payload(_name, exc)
-            context.record_tool_call(_name, result)
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            context.record_tool_call(
+                _name, result, args=dict(kwargs), latency_ms=latency_ms
+            )
             return json.dumps(result, ensure_ascii=False, default=str)
 
         lc_tools.append(

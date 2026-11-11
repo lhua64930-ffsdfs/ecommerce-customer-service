@@ -83,6 +83,8 @@
   "message_id": 42,
   "tool_calls": [{ "tool": "query_order", "success": true }],
   "citations": [],
+  "pending_approval": null,
+  "run_id": "a1b2c3d4e5f6...",
   "agent_mode": "multi_step"
 }
 ```
@@ -98,16 +100,27 @@
 }
 ```
 
-复合任务(查订单 → 取消)的 `tool_calls` 会包含完整工具链:
+复合任务(查订单 → 取消)不会直接修改订单,而是返回待确认的售后申请:
 
 ```json
 {
-  "response": "已为您取消订单 ORDER20260401001...",
+  "response": "已生成取消申请,请在确认卡片中确认...",
   "tool_calls": [
     { "tool": "query_order", "success": true },
-    { "tool": "refund", "success": true }
+    { "tool": "propose_after_sales_action", "success": true }
   ],
   "citations": [],
+  "pending_approval": {
+    "approval_id": "APV1730000000ABCD",
+    "action": "cancel",
+    "order_no": "ORDER20260401001",
+    "summary": "取消订单 ORDER20260401001,退款 ¥2699.00 原路退回",
+    "risk_level": "medium",
+    "status": "pending",
+    "requires_verification": true,
+    "requires_human": false
+  },
+  "run_id": "a1b2c3d4e5f6...",
   "agent_mode": "multi_step"
 }
 ```
@@ -116,9 +129,65 @@
 
 | 值 | 含义 |
 | --- | --- |
-| `multi_step` | 订单查询 / 取消 / 退款由 LangGraph 多步 Agent(模型 ↔ 工具,最多 5 步)完成 |
-| `single_step` | 既有单步 Agent(转人工 / 工具 / RAG / LLM) |
+| `multi_step` | 订单查询 / 售后申请由 LangGraph 多步 Agent(只读工具 + 申请工具,最多 5 步)完成 |
+| `single_step` | 既有单步 Agent(转人工 / 只读工具 / RAG / LLM) |
 | `single_step_fallback` | 多步图不可用、执行失败、超步数或空结果时,自动回退单步 Agent |
+
+> 真实的取消/退款/退货写操作只能通过审批接口执行,模型无法直接写库。
+
+### POST /api/v1/chat/verify-order
+
+敏感售后操作前核验订单归属:订单号 + 手机号后四位。
+
+```json
+{ "session_id": "xxx", "order_no": "ORDER20260401001", "phone_last4": "1234" }
+```
+
+成功返回脱敏订单摘要;失败返回 `{"success": false, "reason": "订单号或手机号后四位不正确"}`。
+
+### POST /api/v1/chat/approvals/{approval_id}/approve
+
+确认/审核售后申请并执行。高风险申请必须传 `reviewer`(客服工号)。
+
+```json
+{ "session_id": "xxx", "reviewer": "A001" }
+```
+
+```json
+{
+  "success": true,
+  "status": "executed",
+  "task_id": 42,
+  "result": {
+    "success": true,
+    "message": "已取消订单 ORDER20260401001,退款将在 1-3 个工作日内原路退回",
+    "order_status": "cancelled"
+  }
+}
+```
+
+重复确认返回 `{"success": true, "status": "executed", "already_executed": true}`。
+
+### POST /api/v1/chat/approvals/{approval_id}/reject
+
+```json
+{ "session_id": "xxx", "reason": "用户改变主意" }
+```
+
+### GET /api/v1/chat/approvals?session_id=xxx
+
+返回会话的审批列表(含状态、风险等级、执行结果)。
+
+### 审批错误码
+
+| code | 含义 |
+| --- | --- |
+| `require_verification` | 需要先核验订单号 + 手机后四位 |
+| `require_human_review` | 高风险操作需要客服工号审核 |
+| `already_executed` | 审批单已执行 |
+| `approval_not_found` | 审批单不存在或不属于当前会话 |
+| `order_not_found` | 订单不存在或不属于当前账号 |
+| `invalid_status` | 审批单状态不允许当前操作 |
 
 ### GET /api/v1/chat/history
 
@@ -202,7 +271,7 @@
   "model": "deepseek-chat",
   "llm_provider": "deepseek",
   "llm_mock": true,
-  "tools": ["search_knowledge", "query_order", "query_product", "refund", "transfer_human", "create_ticket"]
+  "tools": ["search_knowledge", "query_order", "query_product", "propose_after_sales_action", "transfer_human", "create_ticket"]
 }
 ```
 

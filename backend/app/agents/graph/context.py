@@ -19,6 +19,8 @@ class ToolContext:
     user_message: str
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     citations: list[dict[str, Any]] = field(default_factory=list)
+    pending_approval: dict[str, Any] | None = None
+    steps: list[dict[str, Any]] = field(default_factory=list)
 
     def tool_params(self, **kwargs: Any) -> dict[str, Any]:
         """合并请求上下文与模型给出的工具参数。"""
@@ -30,15 +32,39 @@ class ToolContext:
             **kwargs,
         }
 
-    def record_tool_call(self, tool_name: str, result: dict[str, Any]) -> None:
-        """按对外契约记录工具调用(只暴露工具名与成功标志)。
+    def record_tool_call(
+        self,
+        tool_name: str,
+        result: dict[str, Any],
+        args: dict[str, Any] | None = None,
+        latency_ms: int = 0,
+    ) -> None:
+        """记录工具调用、执行步骤、引用与待审批申请。"""
+        success = bool(result.get("success"))
+        self.tool_calls.append({"tool": tool_name, "success": success})
 
-        知识检索工具额外带回 citations,供聊天响应展示来源。
-        """
-        self.tool_calls.append(
-            {"tool": tool_name, "success": bool(result.get("success"))}
+        output: dict[str, Any] = {"success": success}
+        for key in ("decision", "error_code", "executed"):
+            if result.get(key) is not None:
+                output[key] = result[key]
+        response_text = str(result.get("response") or "")
+        if response_text:
+            output["response"] = response_text[:300]
+        self.steps.append(
+            {
+                "step_type": "tool",
+                "name": tool_name,
+                "input": args or {},
+                "output": output,
+                "success": success,
+                "latency_ms": max(0, int(latency_ms)),
+            }
         )
-        if tool_name != "search_knowledge" or not result.get("success"):
+
+        if tool_name == "propose_after_sales_action" and result.get("proposal"):
+            self.pending_approval = result["proposal"]
+
+        if tool_name != "search_knowledge" or not success:
             return
 
         known_ids = {item["id"] for item in self.citations}

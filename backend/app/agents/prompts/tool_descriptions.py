@@ -18,10 +18,10 @@ TOOL_DESCRIPTIONS = """
 - 输入:商品关键词
 - 输出:商品列表及价格库存信息
 
-### 4. refund(退款退货)
-- 用途:处理取消订单、退款申请、退货流程
-- 输入:操作类型(cancel/return/refund/query)、订单号、原因
-- 输出:操作结果和处理流程
+### 4. propose_after_sales_action(售后申请)
+- 用途:提交取消订单、退款、退货申请;不会直接修改订单
+- 输入:操作类型(cancel/return/refund)、订单号、原因
+- 输出:售后申请单(待用户确认或人工审核)
 
 ### 5. transfer_human(转人工)
 - 用途:将用户转接给人工客服
@@ -69,14 +69,14 @@ TOOL_JSON_SCHEMA = [
         },
     },
     {
-        "name": "refund",
-        "description": "处理退款退货申请、取消订单",
+        "name": "propose_after_sales_action",
+        "description": "提交取消订单、退款、退货申请(不直接修改订单)",
         "parameters": {
             "type": "object",
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["cancel", "return", "refund", "query"],
+                    "enum": ["cancel", "return", "refund"],
                     "description": "操作类型",
                 },
                 "order_no": {"type": "string", "description": "订单号"},

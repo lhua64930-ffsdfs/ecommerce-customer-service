@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 import app.models  # noqa: F401 - 注册全部 ORM 模型
-from app.api.v1 import agent, analytics, chat, intent, knowledge, order, product
+from app.api.v1 import agent, analytics, approvals, chat, intent, knowledge, order, product
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal, Base, engine
 from app.core.seed import seed_all
@@ -53,6 +53,7 @@ app.add_middleware(
 )
 
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["对话服务"])
+app.include_router(approvals.router, prefix="/api/v1/chat", tags=["售后审批"])
 app.include_router(intent.router, prefix="/api/v1/intent", tags=["意图识别"])
 app.include_router(agent.router, prefix="/api/v1/agent", tags=["Agent服务"])
 app.include_router(knowledge.router, prefix="/api/v1/knowledge", tags=["知识库"])

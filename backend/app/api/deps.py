@@ -4,7 +4,7 @@ from langchain_core.language_models import BaseChatModel
 
 from app.agents.graph.chat_model import create_chat_model
 from app.agents.graph.multi_step_agent import MultiStepAgent
-from app.agents.tools.factory import build_default_tools
+from app.agents.tools.factory import build_graph_tools
 from app.core.database import get_db
 
 
@@ -19,7 +19,7 @@ def get_multi_step_agent(
     """构造多步 Agent;测试可覆盖 get_chat_model 注入脚本化模型。"""
     if chat_model is None:
         return None
-    return MultiStepAgent(chat_model=chat_model, tools=build_default_tools())
+    return MultiStepAgent(chat_model=chat_model, tools=build_graph_tools())
 
 
 __all__ = ["get_chat_model", "get_db", "get_multi_step_agent"]

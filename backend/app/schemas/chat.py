@@ -71,6 +71,19 @@ class Citation(BaseModel):
     score: float = 0.0
 
 
+class PendingApproval(BaseModel):
+    """待确认/待审批的售后申请。"""
+
+    approval_id: str
+    action: str
+    order_no: str | None = None
+    summary: str = ""
+    risk_level: str = "medium"
+    status: str = "pending"
+    requires_verification: bool = False
+    requires_human: bool = False
+
+
 class MessageResponse(BaseModel):
     id: int
     session_id: str
@@ -81,6 +94,7 @@ class MessageResponse(BaseModel):
     sentiment: SentimentType | None = None
     sentiment_score: float | None = None
     citations: list[Citation] = Field(default_factory=list)
+    pending_approval: PendingApproval | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -98,6 +112,10 @@ class SendMessageResponse(BaseModel):
     citations: list[Citation] = Field(
         default_factory=list, description="RAG 回答引用的知识条目"
     )
+    pending_approval: PendingApproval | None = Field(
+        None, description="待确认/待审批的售后申请"
+    )
+    run_id: str | None = Field(None, description="本次 Agent 运行ID")
     agent_mode: AgentMode = Field(
         AgentMode.SINGLE_STEP,
         description="本次处理路径:multi_step / single_step / single_step_fallback",

@@ -1,0 +1,95 @@
+# 售后策略规则:policy-as-code。
+# 规则按 priority 从大到小匹配;所有 conditions 按 AND 组合。
+# decision:
+#   allow_auto    - 低风险,核验通过后系统自动执行
+#   needs_confirm - 需要用户确认后执行
+#   needs_human   - 需要人工审核(前端会要求客服工号)
+#   deny          - 拒绝,并给出原因
+# action 支持单个动作,或用逗号分隔多个动作;* 表示全部。
+
+version: 1
+policies:
+  # ---------------- 取消订单 ----------------
+  - rule_id: cancel_deny_after_shipped
+    action: cancel
+    description: 已发货及之后的订单不能直接取消,应引导退货
+    priority: 120
+    conditions:
+      - field: order.status
+        op: in
+        value: [shipped, delivered, completed, refunded, cancelled]
+    decision: deny
+    risk_level: high
+
+  - rule_id: cancel_auto_low_value
+    action: cancel
+    description: 待支付/已支付且金额不超过 500 元的订单可自动取消
+    priority: 110
+    conditions:
+      - field: order.status
+        op: in
+        value: [pending, paid]
+      - field: order.pay_amount
+        op: lte
+        value: 500
+    decision: allow_auto
+    risk_level: low
+
+  - rule_id: cancel_confirm_medium_value
+    action: cancel
+    description: 待支付/已支付且金额超过 500 元需用户确认
+    priority: 100
+    conditions:
+      - field: order.status
+        op: in
+        value: [pending, paid]
+      - field: order.pay_amount
+        op: gt
+        value: 500
+    decision: needs_confirm
+    risk_level: medium
+
+  # ---------------- 退货 / 退款 ----------------
+  - rule_id: return_deny_pending
+    action: return,refund
+    description: 未支付订单无需退货退款
+    priority: 120
+    conditions:
+      - field: order.status
+        op: in
+        value: [pending]
+    decision: deny
+    risk_level: high
+
+  - rule_id: return_human_high_value
+    action: return,refund
+    description: 高金额退货退款需人工审核
+    priority: 115
+    conditions:
+      - field: order.pay_amount
+        op: gt
+        value: 5000
+    decision: needs_human
+    risk_level: high
+
+  - rule_id: return_human_shipped
+    action: return,refund
+    description: 已发货/已收货订单的退货退款需人工审核
+    priority: 110
+    conditions:
+      - field: order.status
+        op: in
+        value: [shipped, delivered, completed]
+    decision: needs_human
+    risk_level: high
+
+  - rule_id: return_confirm_paid
+    action: return,refund
+    description: 已支付未发货订单的退货退款需用户确认
+    priority: 100
+    conditions:
+      - field: order.status
+        op: in
+        value: [paid]
+    decision: needs_confirm
+    risk_level: medium

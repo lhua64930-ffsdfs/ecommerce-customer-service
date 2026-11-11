@@ -568,6 +568,164 @@
   font-size: 8px;
 }
 
+/* ---------------- 售后确认卡片 ---------------- */
+.approval-card {
+  margin-top: 8px;
+  padding: 12px 14px;
+  background: #fffdf8;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--stamp);
+  box-shadow: 3px 3px 0 rgba(28, 43, 51, 0.05);
+}
+
+.approval-card.is-closed {
+  border-left-color: var(--verified);
+}
+
+.approval-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.approval-kicker {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.16em;
+}
+
+.approval-title {
+  margin-top: 3px;
+  color: var(--ink);
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.approval-status {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  border: 1px solid var(--rule);
+}
+
+.approval-status.pending {
+  color: var(--stamp);
+  border-color: var(--stamp);
+}
+
+.approval-status.executed {
+  color: var(--verified);
+  border-color: var(--verified);
+}
+
+.approval-summary {
+  margin: 8px 0;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.approval-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.approval-risk,
+.approval-flag {
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--rule);
+}
+
+.approval-risk.low {
+  color: var(--verified);
+  border-color: var(--verified);
+}
+
+.approval-risk.medium {
+  color: var(--gold);
+  border-color: var(--gold);
+}
+
+.approval-risk.high {
+  color: var(--stamp);
+  border-color: var(--stamp);
+}
+
+.approval-flag {
+  color: var(--muted);
+}
+
+.approval-field {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0;
+}
+
+.approval-label {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+.approval-field .ant-input {
+  max-width: 160px;
+}
+
+.approval-error {
+  margin: 6px 0;
+  color: var(--stamp);
+  font-size: 11px;
+}
+
+.approval-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.approval-actions .ant-btn-primary {
+  color: #fff;
+  background: var(--stamp);
+  border-color: var(--stamp);
+  border-radius: 1px;
+}
+
+.approval-actions .ant-btn-primary:not(:disabled):hover {
+  background: var(--stamp-deep) !important;
+  border-color: var(--stamp-deep) !important;
+}
+
+.approval-result {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+@media (max-width: 640px) {
+  .approval-head {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .approval-field .ant-input {
+    max-width: 100%;
+  }
+}
+
 .message-time {
   padding: 0 2px;
   color: #a39b8c;

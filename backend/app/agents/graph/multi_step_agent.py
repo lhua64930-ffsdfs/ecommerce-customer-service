@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import operator
+import time
 from dataclasses import dataclass
 from typing import Annotated, Any, TypedDict
 
@@ -63,6 +64,8 @@ class MultiStepResult:
     response: str
     tool_calls: list[dict[str, Any]]
     citations: list[dict[str, Any]]
+    pending_approval: dict[str, Any] | None
+    steps: list[dict[str, Any]]
 
 
 class MultiStepAgent:
@@ -124,6 +127,8 @@ class MultiStepAgent:
             response=response,
             tool_calls=list(context.tool_calls),
             citations=list(context.citations),
+            pending_approval=context.pending_approval,
+            steps=list(context.steps),
         )
 
     # ---------------- 图构建 ----------------
@@ -137,9 +142,37 @@ class MultiStepAgent:
                 raise MultiStepLimitError(
                     f"多步 Agent 超过 {self.max_steps} 步上限"
                 )
-            response = await model_with_tools.ainvoke(state["messages"])
+            started = time.perf_counter()
+            try:
+                response = await model_with_tools.ainvoke(state["messages"])
+            except Exception as exc:
+                context.steps.append(
+                    {
+                        "step_type": "model",
+                        "name": "agent_model",
+                        "input": {"messages": len(state["messages"])},
+                        "output": {"error": str(exc)[:300]},
+                        "success": False,
+                        "latency_ms": int((time.perf_counter() - started) * 1000),
+                    }
+                )
+                raise
             if not isinstance(response, AIMessage):
                 response = AIMessage(content=_message_text(response))
+            tool_names = [
+                call.get("name", "")
+                for call in (getattr(response, "tool_calls", None) or [])
+            ]
+            context.steps.append(
+                {
+                    "step_type": "model",
+                    "name": "agent_model",
+                    "input": {"messages": len(state["messages"])},
+                    "output": {"tool_calls": tool_names},
+                    "success": True,
+                    "latency_ms": int((time.perf_counter() - started) * 1000),
+                }
+            )
             return {"messages": [response], "steps": 1}
 
         async def call_tools(state: AgentState) -> dict[str, Any]:

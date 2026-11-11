@@ -1,7 +1,9 @@
 import { http } from './request'
 import type {
+  ApprovalActionResult,
   CreateSessionResponse,
   MessageListResponse,
+  PendingApproval,
   SendMessageResponse,
 } from '../types/chat'
 
@@ -26,5 +28,38 @@ export const chatApi = {
 
   rateSession(sessionId: string, score: number, comment?: string) {
     return http.post('/chat/rate', { session_id: sessionId, score, comment })
+  },
+
+  verifyOrder(data: { session_id: string; order_no: string; phone_last4: string }) {
+    return http.post<{ success: boolean; reason?: string; order?: Record<string, unknown> }>(
+      '/chat/verify-order',
+      data,
+    )
+  },
+
+  listApprovals(sessionId: string) {
+    return http.get<{ items: PendingApproval[]; total: number }>('/chat/approvals', {
+      params: { session_id: sessionId },
+    })
+  },
+
+  approveApproval(
+    approvalId: string,
+    data: { session_id: string; reviewer?: string },
+  ) {
+    return http.post<ApprovalActionResult>(
+      `/chat/approvals/${approvalId}/approve`,
+      data,
+    )
+  },
+
+  rejectApproval(
+    approvalId: string,
+    data: { session_id: string; reason?: string; reviewer?: string },
+  ) {
+    return http.post<ApprovalActionResult>(
+      `/chat/approvals/${approvalId}/reject`,
+      data,
+    )
   },
 }

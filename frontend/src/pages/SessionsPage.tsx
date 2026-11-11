@@ -65,6 +65,7 @@ export default function SessionsPage() {
           sentiment: item.sentiment ?? undefined,
           sentimentScore: item.sentiment_score ?? undefined,
           citations: item.citations ?? [],
+          pendingApproval: item.pending_approval ?? undefined,
         })),
       )
     } catch {

@@ -193,10 +193,10 @@ async def test_multi_step_transfer_propagates_need_transfer(
     assert data["tool_calls"] == [{"tool": "transfer_human", "success": True}]
 
 
-async def test_compound_order_then_cancel_writes_database(
+async def test_compound_order_then_cancel_requires_approval(
     client: httpx.AsyncClient, paid_demo_order: str
 ) -> None:
-    """复合任务:先查订单,再取消;取消动作必须真实写库。"""
+    """复合任务:先查订单,再提交取消申请;核验 + 确认后才真正写库。"""
     app.dependency_overrides[get_chat_model] = lambda: ScriptedChatModel(
         responses=[
             AIMessage(
@@ -213,13 +213,13 @@ async def test_compound_order_then_cancel_writes_database(
                 content="",
                 tool_calls=[
                     {
-                        "name": "refund",
+                        "name": "propose_after_sales_action",
                         "args": {"action": "cancel", "order_no": paid_demo_order},
                         "id": "call_2",
                     }
                 ],
             ),
-            AIMessage(content="已为您取消订单,退款将在 1-3 个工作日内原路退回。"),
+            AIMessage(content="已为您生成取消申请,请在确认卡片中确认。"),
         ]
     )
 
@@ -239,13 +239,66 @@ async def test_compound_order_then_cancel_writes_database(
     assert data["agent_mode"] == "multi_step"
     assert data["tool_calls"] == [
         {"tool": "query_order", "success": True},
-        {"tool": "refund", "success": True},
+        {"tool": "propose_after_sales_action", "success": True},
     ]
-    assert "取消" in data["response"]
+    assert data["run_id"]
+    pending = data["pending_approval"]
+    assert pending is not None
+    assert pending["action"] == "cancel"
+    assert pending["requires_verification"] is True
+    approval_id = pending["approval_id"]
+
+    # 未核验直接确认 → 422 require_verification
+    blocked = await client.post(
+        f"/api/v1/chat/approvals/{approval_id}/approve",
+        json={"session_id": session_id},
+    )
+    assert blocked.status_code == 422
+    assert blocked.json()["detail"]["code"] == "require_verification"
+
+    # 手机后四位错误 → 核验失败
+    bad_verify = await client.post(
+        "/api/v1/chat/verify-order",
+        json={
+            "session_id": session_id,
+            "order_no": paid_demo_order,
+            "phone_last4": "0000",
+        },
+    )
+    assert bad_verify.status_code == 200
+    assert bad_verify.json()["success"] is False
+
+    # 正确核验后确认 → 执行取消
+    verified = await client.post(
+        "/api/v1/chat/verify-order",
+        json={
+            "session_id": session_id,
+            "order_no": paid_demo_order,
+            "phone_last4": "1234",
+        },
+    )
+    assert verified.status_code == 200
+    assert verified.json()["success"] is True
+
+    approved = await client.post(
+        f"/api/v1/chat/approvals/{approval_id}/approve",
+        json={"session_id": session_id},
+    )
+    assert approved.status_code == 200
+    assert approved.json()["success"] is True
+    assert approved.json()["status"] == "executed"
 
     order_response = await client.get(f"/api/v1/order/{paid_demo_order}")
     assert order_response.status_code == 200
     assert order_response.json()["status"] == "cancelled"
+
+    # 重复确认幂等
+    repeated = await client.post(
+        f"/api/v1/chat/approvals/{approval_id}/approve",
+        json={"session_id": session_id},
+    )
+    assert repeated.status_code == 200
+    assert repeated.json()["already_executed"] is True
 
 
 async def test_order_query_falls_back_when_graph_fails(

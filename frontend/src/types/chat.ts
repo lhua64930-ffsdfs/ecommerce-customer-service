@@ -24,6 +24,30 @@ export interface Citation {
   score: number
 }
 
+export interface PendingApproval {
+  approval_id: string
+  action: 'cancel' | 'refund' | 'return' | string
+  order_no: string | null
+  summary: string
+  risk_level: 'low' | 'medium' | 'high' | string
+  status: 'pending' | 'executed' | 'rejected' | string
+  requires_verification: boolean
+  requires_human: boolean
+}
+
+export interface ApprovalActionResult {
+  success: boolean
+  status: string
+  task_id?: number | null
+  already_executed?: boolean
+  result?: {
+    success?: boolean
+    ticket_no?: string
+    message?: string
+    already?: boolean
+  } | null
+}
+
 export interface Message {
   id: string
   senderType: SenderType
@@ -33,6 +57,7 @@ export interface Message {
   sentiment?: SentimentType
   sentimentScore?: number
   citations?: Citation[]
+  pendingApproval?: PendingApproval
 }
 
 export interface SessionInfo {
@@ -65,6 +90,8 @@ export interface SendMessageResponse {
   message_id: number | null
   tool_calls: ToolCall[]
   citations: Citation[]
+  pending_approval: PendingApproval | null
+  run_id: string | null
   agent_mode: 'multi_step' | 'single_step' | 'single_step_fallback'
 }
 
@@ -78,6 +105,7 @@ export interface HistoryMessage {
   sentiment: SentimentType | null
   sentiment_score: number | null
   citations: Citation[]
+  pending_approval: PendingApproval | null
   created_at: string
 }
 

@@ -26,9 +26,9 @@ dist/
 logs/*
 !logs/.gitkeep
 
-# 模型缓存
+# 模型缓存(仅根目录,避免误伤 backend/app/models/)
 .cache/
-models/
+/models/
 
 # Milvus 本地数据
 volumes/

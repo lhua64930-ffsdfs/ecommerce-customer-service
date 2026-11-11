@@ -13,10 +13,12 @@ from app.agents.customer_agent import CustomerServiceAgent
 from app.agents.graph.multi_step_agent import MultiStepAgent
 from app.api.deps import get_db, get_multi_step_agent
 from app.core.config import settings
+from app.models.approval import Approval
 from app.models.intent import Intent
 from app.models.message import Message
 from app.models.session import Session
 from app.models.user import User
+from app.runtime.runs import RunRecorder
 from app.schemas.chat import (
     AgentMode,
     CreateSessionRequest,
@@ -164,6 +166,17 @@ async def send_message(
     )
     agent_result = await agent.chat(payload.content)
 
+    pending_approval = agent_result.get("pending_approval")
+    recorder = RunRecorder(db)
+    run = recorder.start(
+        session_id=session.id,
+        agent_mode=agent_result.get("agent_mode", AgentMode.SINGLE_STEP.value),
+    )
+    await recorder.record_steps(run, agent_result.get("run_steps", []))
+    await recorder.finish(
+        run, "awaiting_approval" if pending_approval else "succeeded"
+    )
+
     intent_data = agent_result["intent"]
     intent_row = (
         await db.execute(select(Intent).where(Intent.intent_code == intent_data["intent_code"]))
@@ -183,6 +196,8 @@ async def send_message(
         meta={
             "tool_calls": agent_result.get("tool_calls", []),
             "citations": agent_result.get("citations", []),
+            "pending_approval": pending_approval,
+            "run_id": run.run_id,
             "handler_type": intent_data.get("handler_type"),
             "entities": intent_data.get("entities", []),
             "agent_mode": agent_result.get("agent_mode"),
@@ -208,6 +223,8 @@ async def send_message(
         message_id=bot_message.id,
         tool_calls=agent_result.get("tool_calls", []),
         citations=agent_result.get("citations", []),
+        pending_approval=pending_approval,
+        run_id=run.run_id,
         agent_mode=agent_result.get("agent_mode", AgentMode.SINGLE_STEP.value),
     )
 
@@ -251,6 +268,26 @@ async def get_history(
         )
         intents = {intent.id: intent for intent in intent_rows}
 
+    # 会话回放时用审批表的最新状态覆盖消息里的快照,避免历史卡片一直显示“待确认”
+    approval_ids = set()
+    for message in rows:
+        meta = message.meta if isinstance(message.meta, dict) else {}
+        pending = meta.get("pending_approval")
+        if isinstance(pending, dict) and pending.get("approval_id"):
+            approval_ids.add(str(pending["approval_id"]))
+    approvals: dict[str, Approval] = {}
+    if approval_ids:
+        approval_rows = (
+            (
+                await db.execute(
+                    select(Approval).where(Approval.approval_no.in_(approval_ids))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        approvals = {item.approval_no: item for item in approval_rows}
+
     messages = []
     for message in rows:
         intent_info = None
@@ -265,6 +302,11 @@ async def get_history(
                 priority=intent.priority,
             )
         meta = message.meta if isinstance(message.meta, dict) else {}
+        pending = meta.get("pending_approval")
+        if isinstance(pending, dict) and pending.get("approval_id"):
+            approval = approvals.get(str(pending["approval_id"]))
+            if approval is not None:
+                pending = {**pending, "status": approval.status}
         messages.append(
             MessageResponse(
                 id=message.id,
@@ -278,6 +320,7 @@ async def get_history(
                 if message.sentiment_score is not None
                 else None,
                 citations=meta.get("citations") or [],
+                pending_approval=pending,
                 created_at=message.created_at,
             )
         )

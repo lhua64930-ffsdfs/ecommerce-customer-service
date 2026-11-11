@@ -7,10 +7,20 @@ from collections.abc import AsyncGenerator, Iterator
 
 import httpx
 import pytest
+from sqlalchemy import select
 
 from app.api.deps import get_chat_model
+from app.core.database import AsyncSessionLocal
 from app.main import app
+from app.models.order import Order
 from app.services.llm_service import LLMService
+
+DEMO_ORDER_STATUS = {
+    "ORDER20260315001": "shipped",
+    "ORDER20260401001": "paid",
+    "ORDER20260310005": "delivered",
+    "ORDER20260320001": "pending",
+}
 
 
 @pytest.fixture(autouse=True)
@@ -50,3 +60,26 @@ async def client() -> AsyncGenerator[httpx.AsyncClient, None]:
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as async_client:
             yield async_client
+
+
+@pytest.fixture
+async def demo_orders(
+    client: httpx.AsyncClient,
+) -> AsyncGenerator[dict[str, str], None]:
+    """把演示订单恢复到种子状态,保证审批/取消类用例可重复执行。"""
+
+    async def _reset() -> None:
+        async with AsyncSessionLocal() as session:
+            for order_no, status in DEMO_ORDER_STATUS.items():
+                order = (
+                    await session.execute(
+                        select(Order).where(Order.order_no == order_no)
+                    )
+                ).scalar_one_or_none()
+                if order is not None:
+                    order.status = status
+            await session.commit()
+
+    await _reset()
+    yield DEMO_ORDER_STATUS
+    await _reset()

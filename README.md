@@ -13,10 +13,14 @@
 - **意图识别**:关键词规则 + LLM 融合,支持订单号/手机号/商品名/价格/日期实体抽取
 - **情感分析**:词典 + 规则,负向情绪安抚并自动转人工
 - **RAG 知识库**:本地 BGE 中文向量模型 + Milvus 语义检索,回答附带结构化引用(citations)
-- **Agent 工具集**:知识检索、订单查询、商品查询、退款/取消、转人工、创建工单
+- **Agent 工具集**:知识检索、订单查询、商品查询、售后申请、转人工、创建工单
 - **多步 Agent**:LangGraph 模型节点 + 工具节点 + 条件边,单请求最多 5 步;
   失败自动回退单步 Agent,响应通过 `agent_mode` 标记实际路径
-- **复合任务**:一次请求内完成「查订单 → 判断状态 → 取消/退货」,取消操作真实写库且幂等
+- **复合任务**:一次请求内完成「查订单 → 判断状态 → 提交取消/退货申请」;
+  模型只提申请,用户确认或人工审核后由系统执行
+- **任务运行时**:售后事项、Agent 运行、执行步骤、审批单全量落库,支持会话回放与审计
+- **策略引擎**:退款/取消资格由 YAML 规则 + 策略表判定(金额/状态/风险分级),每次决策留痕
+- **订单核验**:敏感操作要求订单号 + 手机号后四位,核验记录绑定会话
 - **RAG 评测**:固定评测集 + Recall@1/3/5、MRR@5 离线评测脚本
 - **业务安全**:订单查询校验归属;手机号、姓名、收货地址在工具输出与 API 响应中脱敏
 - **接口限流**:Redis + Lua 原子滑动窗口,按会话限制每分钟请求数
@@ -26,20 +30,23 @@
 
 ## 项目亮点
 
-- **复合任务可演示**:模型先调用 `query_order` 读取真实状态,再决定取消还是退货;
-  取消只对「待支付 / 已支付」生效,已发货订单引导退货,避免误操作。
+- **模型提申请,系统执行**:模型先调用 `query_order` 读取真实状态,再调用
+  `propose_after_sales_action` 生成审批单;用户确认/人工审核后由审批服务执行,
+  模型没有直接改订单或退款的权限。
+- **策略与模型分离**:取消/退款资格由 policy-as-code 判定(金额、订单状态、风险分级),
+  低风险自动执行、中风险确认、高风险人工审核;每次决策写入 `policy_decisions`。
 - **Agent Fallback 可观测**:图失败、超步数、空结果或 LLM 不可用时自动回退单步 Agent,
   响应用 `agent_mode` 区分 `multi_step` / `single_step` / `single_step_fallback`。
 - **RAG 回答可追溯**:检索结果转成 `citations`(知识 id、分类、问题、相似度),
   随聊天响应返回并持久化到消息元数据,会话回放仍可查看来源。
 - **RAG 可降级**:向量库或 Embedding 不可用时自动回退关键词 + bigram 检索,
   并带 30 秒冷却,避免每个请求重复重试已宕机的 Milvus。
-- **真实数据链路**:8 张 MySQL 表 + Redis + Milvus,不是前端 mock;
+- **真实数据链路**:16 张 MySQL 表 + Redis + Milvus,不是前端 mock;
   订单查询在工具层校验归属。
-- **安全工程**:订单归属校验、PII 脱敏、Redis 原子滑动窗口限流、
-  密钥仅从环境变量注入。
-- **测试不碰真实 LLM**:42 个 pytest,HTTP 主接缝 + 脚本化 Fake ChatModel,
-  覆盖多步图、复合任务、fallback、RAG 引用与评测指标计算。
+- **安全工程**:订单归属校验、订单号+手机后四位核验、PII 脱敏、
+  Redis 原子滑动窗口限流、审批与审计日志,密钥仅从环境变量注入。
+- **测试不碰真实 LLM**:54 个 pytest,HTTP 主接缝 + 脚本化 Fake ChatModel,
+  覆盖多步图、复合任务、审批状态机、策略引擎、核验、fallback、RAG 引用与评测指标。
 - **界面设计**:聊天页采用「售后受理台 / Service Docket」风格——暖纸底、
   墨色结构线、朱红印章与账本式消息批注,订单号/时间使用等宽字体。
 - **一键复现**:Docker Compose 覆盖 MySQL / Redis / Milvus / 后端 / 前端 / Nginx。
@@ -59,13 +66,13 @@
 | --- | --- |
 | ![欢迎页](docs/images/chat-welcome.png) | ![订单查询](docs/images/chat-order.png) |
 
-| RAG 回答 + 结构化引用 | 复合任务(查订单 → 取消) |
+| RAG 回答 + 结构化引用 | 复合任务:生成取消申请(待确认) |
 | --- | --- |
-| ![RAG 引用](docs/images/chat-rag.png) | ![复合任务](docs/images/chat-cancel.png) |
+| ![RAG 引用](docs/images/chat-rag.png) | ![取消申请](docs/images/chat-cancel.png) |
 
-| 投诉转人工(负向情感 + 排队信息) |
-| --- |
-| ![投诉转人工](docs/images/chat-transfer.png) |
+| 审批执行结果(核验后确认) | 投诉转人工(负向情感 + 排队信息) |
+| --- | --- |
+| ![审批执行](docs/images/chat-cancel-executed.png) | ![投诉转人工](docs/images/chat-transfer.png) |
 
 ### 数据看板 / 知识库 / 会话记录
 
@@ -98,17 +105,21 @@ flowchart LR
     API --> RL[Redis 滑动窗口限流]
     API --> PRE[预处理 / 情感 / 意图]
     PRE --> ROUTE{意图路由}
-    ROUTE -->|order_query / cancel_order / refund_request| GRAPH[LangGraph 多步 Agent<br/>模型 ↔ 工具 ≤ 5 步]
-    GRAPH -->|成功| TOOLS[6 个工具适配层]
+    ROUTE -->|order_query / cancel_order / refund_request| GRAPH[LangGraph 多步 Agent<br/>只读工具 + 售后申请 ≤ 5 步]
+    GRAPH -->|成功| TOOLS[只读工具 / 申请工具]
     GRAPH -->|失败 / 空结果 / 超步数| SINGLE[单步 Agent]
     ROUTE -->|其他意图| SINGLE
     SINGLE --> TOOLS
     SINGLE --> RAG[RAGService]
     RAG -->|retrieve + citations| MILVUS[(Milvus)]
     RAG -->|降级| KB[(知识库 JSON)]
-    TOOLS --> DB[(MySQL)]
+    API --> APP[审批服务<br/>策略引擎 + 订单核验]
+    TOOLS -->|仅申请| APP
+    APP -->|用户确认 / 人工审核| DB[(MySQL)]
+    APP -->|退款/退货| TICKET[(tickets)]
+    TOOLS --> DB
     TOOLS --> REDIS[(Redis)]
-    API --> MSG[(messages / sessions)]
+    API --> MSG[(messages / sessions / runs / steps)]
 
     classDef store fill:#f5f5f5,stroke:#999;
     class DB,REDIS,MILVUS,MSG,KB store;
@@ -125,22 +136,24 @@ flowchart LR
 after-sales-qa/
 ├── backend/
 │   ├── app/
-│   │   ├── api/v1/          # 对话、意图、Agent、知识库、订单、商品、分析接口
+│   │   ├── api/v1/          # 对话、意图、Agent、审批、知识库、订单、商品、分析接口
 │   │   ├── agents/          # Agent 基类、客服 Agent、6 个工具、LangGraph 多步图
 │   │   ├── core/            # 配置、数据库、种子数据、YAML 加载器
-│   │   ├── models/          # 8 张表的 ORM 模型
-│   │   ├── schemas/         # Pydantic 模型(含 citation)
+│   │   ├── models/          # 16 张表的 ORM 模型(含任务/审批/策略/核验/审计)
+│   │   ├── policies/        # 策略引擎:规则匹配 + 决策审计
+│   │   ├── runtime/         # 任务运行时:事项 / 运行步骤 / 审批执行
+│   │   ├── schemas/         # Pydantic 模型(含 citation / approval)
 │   │   ├── services/        # LLM / 情感 / 意图 / Embedding / RAG / RAG 评测
 │   │   └── utils/           # 日志、缓存与限流、PII 脱敏、引用构建
-│   ├── scripts/             # init_db / import_knowledge / init_vector_db / evaluate_rag
-│   ├── tests/               # pytest(服务单测 + 图单测 + API 集成测试)
+│   ├── scripts/             # init_db / import_knowledge / init_vector_db / evaluate_rag / reset_demo_data
+│   ├── tests/               # pytest(服务单测 + 图单测 + 策略/审批 + API 集成)
 │   └── requirements.txt
 ├── frontend/
 │   ├── src/
-│   │   ├── api/             # axios 封装
-│   │   ├── components/      # 聊天气泡、引用标签、输入框、情感指示器、布局
+│   │   ├── api/             # axios 封装(含审批/核验)
+│   │   ├── components/      # 聊天气泡、引用标签、售后确认卡片、输入框、布局
 │   │   ├── pages/           # 聊天、看板、知识库、会话记录
-│   │   ├── stores/          # Zustand 状态
+│   │   ├── stores/          # Zustand 状态(含审批决策)
 │   │   └── types/
 │   └── scripts/             # Playwright 冒烟测试与演示 GIF
 ├── config/                  # LLM / 意图 / RAG / Agent 业务配置
@@ -219,7 +232,7 @@ LLM_MODEL=deepseek-chat
 
 ### 后端 pytest
 
-需要基础设施容器运行(测试使用真实 MySQL/Redis/Milvus)。当前 **42 个测试**:
+需要基础设施容器运行(测试使用真实 MySQL/Redis/Milvus)。当前 **54 个测试**:
 
 ```bash
 cd backend
@@ -229,10 +242,12 @@ cd backend
 覆盖:
 
 - **服务单测**:情感规则、意图与实体抽取、PII 脱敏、RAG 引用构建、评测指标计算;
-- **图单测**:单工具路径、复合任务(查询 → 取消)、知识检索引用、图失败、
+- **策略与运行时**:规则匹配/优先级/默认拒绝、事项复用、审批状态机;
+- **图单测**:单工具路径、复合任务(查询 → 提交申请)、知识检索引用、图失败、
   空回复、无工具结果、5 步上限、历史传递;
-- **API 集成**:多步订单查询、复合任务真实写库、强制图失败 fallback、
-  图内转人工 `need_transfer`、订单越权校验、RAG 引用与历史回放;
+- **API 集成**:多步订单查询、复合任务生成审批单、核验后执行、重复确认幂等、
+  策略拒绝/转人工、跨会话越权、强制图失败 fallback、转人工、订单越权校验、
+  RAG 引用与历史回放;
 - **限流单测**:滑动窗口计数、过期与 Redis 故障 fail-open;
 - 测试通过 FastAPI `dependency_overrides` 注入脚本化 Fake ChatModel,
   并强制 `LLMService` 进入 mock,不会访问真实 DeepSeek。
@@ -317,8 +332,12 @@ docker compose -f docker/docker-compose.yml down
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | POST | `/api/v1/chat/session` | 创建会话 |
-| POST | `/api/v1/chat/send` | 发送消息(意图/情感/工具调用/引用) |
-| GET | `/api/v1/chat/history` | 历史消息(含 citations) |
+| POST | `/api/v1/chat/send` | 发送消息(意图/情感/工具调用/引用/待审批) |
+| GET | `/api/v1/chat/history` | 历史消息(含 citations / 审批状态) |
+| POST | `/api/v1/chat/verify-order` | 订单核验(订单号 + 手机后四位) |
+| POST | `/api/v1/chat/approvals/{id}/approve` | 确认/审核售后申请并执行 |
+| POST | `/api/v1/chat/approvals/{id}/reject` | 拒绝售后申请 |
+| GET | `/api/v1/chat/approvals` | 会话审批列表 |
 | POST | `/api/v1/chat/transfer` | 转人工 |
 | POST | `/api/v1/chat/rate` | 会话评分 |
 | POST | `/api/v1/intent/recognize` | 意图识别 |
@@ -365,6 +384,9 @@ python scripts/evaluate_rag.py
 | Agent 编排 | LangGraph 多步主路径 + 单步 fallback | 展示多步工具调用,同时保留稳定兜底路径 |
 | 限流 | Redis + Lua 原子滑动窗口 | 计数随窗口滚动过期,避免持续流量下永久 429 |
 | PII | 手机号 / 姓名 / 地址脱敏 | 工具输出与订单 API 统一处理,原始数据留库 |
+| 售后审批 | 模型只提申请 + 审批服务执行 | 写操作不经过模型,确认/审核后幂等执行 |
+| 策略引擎 | YAML 规则 + 决策审计 | 金额/状态/风险分级,低风险自动、高风险人工 |
+| 订单核验 | 订单号 + 手机后四位 | 敏感操作前校验,核验记录绑定会话 |
 | 情感分析 | 词典 + 规则 | 处理否定词跨句、感叹号方向等边界情况 |
 | 订单工具 | MySQL 真实数据 + 归属校验 | 防止通过订单号越权查看他人订单 |
 

@@ -52,7 +52,7 @@ def get_react_prompt() -> str:
 
 工作流程:
 1. Thought:分析用户问题,判断需要哪些信息、使用哪个工具
-2. Action:调用工具(search_knowledge / query_order / query_product / refund / transfer_human / create_ticket)
+2. Action:调用工具(search_knowledge / query_order / query_product / propose_after_sales_action / transfer_human / create_ticket)
 3. Observation:分析工具返回结果
 4. Final Answer:整合信息生成回复
 
@@ -60,7 +60,7 @@ def get_react_prompt() -> str:
 - search_knowledge:检索知识库
 - query_order:查询订单
 - query_product:查询商品
-- refund:处理退款退货
+- propose_after_sales_action:提交取消/退款/退货申请(不直接改订单)
 - transfer_human:转人工
 - create_ticket:创建工单
 
@@ -84,10 +84,12 @@ def get_multi_step_system_prompt() -> str:
 ## 复合任务(查询 + 取消/退货)
 - 用户在同一句话里既要求查订单、又要求取消或退货时,先调用 query_order,
   确认订单真实状态后再决定下一步。
-- 只有「待支付 / 已支付待发货」可以取消,调用 refund(action="cancel", order_no=...)。
-- 已发货、已收货或已完成的订单不能直接取消,应调用 refund(action="return", order_no=...),
-  并向用户说明退货流程,而不是声称已取消。
-- 工具返回 success=true 才能说操作完成;失败时如实说明原因。
+- 取消、退款、退货一律调用 propose_after_sales_action 提交申请,
+  由用户确认或人工审核后由系统执行;不要声称已经取消/退款成功。
+- 只有「待支付 / 已支付待发货」可以申请取消;
+  已发货、已收货或已完成的订单应提交退货申请(action="return"),并说明退货流程。
+- 申请提交后,告诉用户「已生成售后申请,请在确认卡片中确认或等待人工审核」。
+- 工具返回 success=true 且 decision=allow_auto/executed 时,才能说系统已自动处理。
 - 用户没有提供订单号时,先请用户补充订单号,不要猜测订单号。
 """
     )

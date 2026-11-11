@@ -123,25 +123,37 @@ class FakeKnowledgeTool:
         }
 
 
-class FakeRefundTool:
-    """refund 的测试替身:记录取消/退货动作,不访问数据库。"""
+class FakeProposeTool:
+    """propose_after_sales_action 的测试替身:只生成申请,不写数据库。"""
 
-    name = "refund"
-    description = "处理取消订单、退款退货"
+    name = "propose_after_sales_action"
+    description = "提交取消/退款/退货申请"
 
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
 
     async def execute(self, params: dict[str, Any]) -> dict[str, Any]:
         self.calls.append(params)
-        action = params.get("action") or "consult"
+        action = params.get("action") or "cancel"
         order_no = params.get("order_no") or "ORDER20260401001"
-        return {
-            "success": True,
+        proposal = {
+            "approval_id": "APV-TEST-001",
             "action": action,
             "order_no": order_no,
-            "order_status": "cancelled" if action == "cancel" else "paid",
-            "response": f"订单 {order_no} 已执行 {action}",
+            "summary": f"{action} 订单 {order_no}",
+            "risk_level": "medium",
+            "status": "pending",
+            "requires_verification": True,
+            "requires_human": False,
+        }
+        return {
+            "success": True,
+            "decision": "needs_confirm",
+            "response": f"已生成售后申请:{action} 订单 {order_no}",
+            "proposal": proposal,
+            "task_id": 1,
+            "approval_no": "APV-TEST-001",
+            "executed": False,
         }
 
     def get_schema(self) -> dict[str, Any]:
@@ -153,7 +165,7 @@ class FakeRefundTool:
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["cancel", "return", "refund", "query"],
+                        "enum": ["cancel", "return", "refund"],
                         "description": "操作类型",
                     },
                     "order_no": {"type": "string", "description": "订单号"},
