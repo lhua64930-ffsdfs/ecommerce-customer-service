@@ -322,3 +322,66 @@ async def test_order_query_falls_back_when_graph_fails(
     assert data["agent_mode"] == "single_step_fallback"
     assert data["tool_calls"] == [{"tool": "query_order", "success": True}]
     assert "ORDER20260401001" in data["response"]
+
+
+async def test_order_selection_interrupt_and_resume(
+    client: httpx.AsyncClient, paid_demo_order: str
+) -> None:
+    """多步图在缺订单号时 interrupt,resume 后生成审批单。"""
+    model = ScriptedChatModel(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "propose_after_sales_action",
+                        "args": {"action": "cancel"},
+                        "id": "call_1",
+                    }
+                ],
+            ),
+            AIMessage(content="已生成取消申请,请在卡片中确认。"),
+        ]
+    )
+    app.dependency_overrides[get_chat_model] = lambda: model
+    try:
+        created = await client.post("/api/v1/chat/session", json={})
+        session_id = created.json()["session"]["session_id"]
+
+        sent = await client.post(
+            "/api/v1/chat/send",
+            json={"session_id": session_id, "content": "帮我取消订单"},
+        )
+        assert sent.status_code == 200, sent.text
+        data = sent.json()
+        assert data["interrupt"] is not None
+        assert data["interrupt"]["type"] == "select_order"
+        assert data["thread_id"]
+
+        orders = data["interrupt"]["orders"]
+        selected = next(
+            (
+                item["order_no"]
+                for item in orders
+                if item["order_no"] == paid_demo_order
+            ),
+            None,
+        )
+        if selected is None:
+            pytest.skip("演示已支付订单不在选择列表")
+
+        resumed = await client.post(
+            "/api/v1/chat/resume",
+            json={
+                "session_id": session_id,
+                "thread_id": data["thread_id"],
+                "resume": {"type": "select_order", "order_no": selected},
+            },
+        )
+        assert resumed.status_code == 200, resumed.text
+        resumed_data = resumed.json()
+        assert resumed_data["response"] == "已生成取消申请,请在卡片中确认。"
+        assert resumed_data["pending_approval"] is not None
+        assert resumed_data["pending_approval"]["order_no"] == selected
+    finally:
+        app.dependency_overrides.pop(get_chat_model, None)

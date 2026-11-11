@@ -1,16 +1,17 @@
-"""转人工工具:更新会话状态并写入 Redis 排队队列。"""
+"""转人工工具:MySQL 为真源,Redis 队列只做尽力而为的排队提示。"""
 from __future__ import annotations
 
 import json
-import time
+import uuid
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config_loader import load_config
+from app.models.audit_log import AuditLog
 from app.models.session import Session
-from app.utils.cache import get_redis
+from app.utils.cache import get_redis, redis_configured
 from app.utils.logger import logger
 
 
@@ -29,18 +30,25 @@ class TransferHumanTool:
         user_id: int | None = params.get("user_id")
         message: str = params.get("user_message", "")
         reason: str = params.get("reason") or self._detect_reason(message)
+        transfer_id = f"TRF{uuid.uuid4().hex[:12].upper()}"
 
         try:
-            queue_info = await self._queue_transfer(session_id, user_id, reason)
+            # MySQL 先落状态与审计;Redis 不可用时仍然完成转人工
             if db is not None:
-                await self._update_session_status(db, session_id)
+                await self._update_session_status(
+                    db, session_id, user_id, transfer_id, reason
+                )
+            queue_info = await self._queue_transfer(
+                transfer_id, session_id, user_id, reason
+            )
 
             return {
                 "success": True,
                 "response": self._generate_message(reason, queue_info),
-                "transfer_id": queue_info["transfer_id"],
+                "transfer_id": transfer_id,
                 "queue_position": queue_info["position"],
                 "estimated_wait_time": queue_info["wait_time"],
+                "queue_backend": queue_info["backend"],
                 "reason": reason,
             }
         except Exception as exc:  # noqa: BLE001
@@ -64,10 +72,18 @@ class TransferHumanTool:
         return "其他"
 
     async def _queue_transfer(
-        self, session_id: str, user_id: int | None, reason: str
+        self, transfer_id: str, session_id: str, user_id: int | None, reason: str
     ) -> dict[str, Any]:
-        transfer_id = f"TRF{int(time.time())}"
-        position = 1
+        """Redis 只作为排队位置提示;未配置/故障时返回 db 后端。"""
+        fallback = {
+            "backend": "db",
+            "position": 1,
+            "wait_time": None,
+            "queue_name": self.queue_name,
+        }
+        if not redis_configured():
+            return fallback
+
         try:
             client = get_redis()
             await client.lpush(
@@ -78,54 +94,80 @@ class TransferHumanTool:
                         "session_id": session_id,
                         "user_id": user_id,
                         "reason": reason,
-                        "created_at": int(time.time()),
                     },
                     ensure_ascii=False,
                 ),
             )
             position = max(1, int(await client.llen(self.queue_name)))
-        except Exception as exc:  # noqa: BLE001 - 队列不可用时仍允许转接
-            logger.warning("转人工队列写入失败,使用默认排队位置: {}", exc)
-
-        return {
-            "transfer_id": transfer_id,
-            "position": position,
-            "wait_time": position * 3,
-            "queue_name": self.queue_name,
-        }
+            return {
+                "backend": "redis",
+                "position": position,
+                "wait_time": position * 3,
+                "queue_name": self.queue_name,
+            }
+        except Exception as exc:  # noqa: BLE001 - 队列失败不影响转人工
+            logger.warning("转人工队列写入失败,使用 DB 模式: {}", exc)
+            return fallback
 
     @staticmethod
-    async def _update_session_status(db: AsyncSession, session_id: str) -> None:
-        result = await db.execute(select(Session).where(Session.session_id == session_id))
+    async def _update_session_status(
+        db: AsyncSession,
+        session_id: str,
+        user_id: int | None,
+        transfer_id: str,
+        reason: str,
+    ) -> None:
+        result = await db.execute(
+            select(Session).where(Session.session_id == session_id)
+        )
         session = result.scalar_one_or_none()
-        if session is not None:
-            session.status = "transferred"
-            await db.commit()
+        if session is None:
+            return
+        session.status = "transferred"
+        db.add(
+            AuditLog(
+                user_id=user_id if user_id is not None else session.user_id,
+                session_id=session.id,
+                action="transfer_requested",
+                target_type="session",
+                target_id=session.session_id,
+                detail_json={
+                    "transfer_id": transfer_id,
+                    "reason": reason,
+                },
+            )
+        )
+        await db.commit()
 
     @staticmethod
     def _generate_message(reason: str, queue_info: dict[str, Any]) -> str:
         position = queue_info.get("position", 1)
-        wait_time = queue_info.get("wait_time", 3)
+        wait_time = queue_info.get("wait_time")
+        wait_text = (
+            f"预计等待时间:{wait_time} 分钟\n"
+            if wait_time is not None
+            else ""
+        )
 
         if reason == "投诉":
             return (
                 "😔 非常抱歉给您带来不好的体验。\n\n"
                 "已为您优先转接投诉处理专员\n"
                 f"当前队列位置:第 {position} 位\n"
-                f"预计等待时间:{wait_time} 分钟\n\n"
+                f"{wait_text}\n"
                 "我们非常重视您的反馈,会尽快为您处理!"
             )
         if reason == "用户主动请求":
             return (
                 "👤 已为您转接人工客服\n\n"
                 f"当前队列位置:第 {position} 位\n"
-                f"预计等待时间:{wait_time} 分钟\n\n"
+                f"{wait_text}\n"
                 "💡 请保持当前页面,客服将自动接入。"
             )
         return (
             "👤 正在为您转接人工客服...\n\n"
             f"当前队列位置:第 {position} 位\n"
-            f"预计等待时间:{wait_time} 分钟\n\n"
+            f"{wait_text}\n"
             "请稍候,客服代表将马上为您服务。"
         )
 

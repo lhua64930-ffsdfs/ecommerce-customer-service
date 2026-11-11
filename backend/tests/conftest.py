@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy import select
 
 from app.api.deps import get_chat_model
+from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.main import app
 from app.models.order import Order
@@ -29,11 +30,32 @@ async def _fresh_redis_client() -> AsyncGenerator[None, None]:
     from app.utils import cache
 
     cache._client = None
+    cache.reset_redis_state()
     yield
     try:
         await cache.close_redis()
     except Exception:  # noqa: BLE001 - 清理失败不阻塞测试
         cache._client = None
+    cache.reset_redis_state()
+
+
+@pytest.fixture(autouse=True)
+def _memory_checkpointer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """测试不落 SQLite 文件,统一用 InMemorySaver。"""
+    monkeypatch.setattr(settings, "CHECKPOINTER_BACKEND", "memory")
+
+
+@pytest.fixture(autouse=True)
+def _reset_circuit_breakers() -> Iterator[None]:
+    """熔断器是进程单例,测试间重置,避免失败用例影响后续。"""
+    from app.core import circuit
+
+    breakers = (circuit.chat_breaker, circuit.embed_breaker, circuit.rerank_breaker)
+    for breaker in breakers:
+        breaker.reset()
+    yield
+    for breaker in breakers:
+        breaker.reset()
 
 
 @pytest.fixture(autouse=True)

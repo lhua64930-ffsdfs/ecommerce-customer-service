@@ -3,17 +3,21 @@ from __future__ import annotations
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langgraph.checkpoint.memory import InMemorySaver
 
 from app.agents.graph.multi_step_agent import (
     MultiStepAgent,
     MultiStepEmptyResultError,
     MultiStepExecutionError,
     MultiStepLimitError,
+    MultiStepResumeError,
 )
 from tests.support.fake_chat_model import (
     FakeKnowledgeTool,
+    FakeOrderListTool,
     FakeOrderTool,
     FakeProposeTool,
+    FakeTicketTool,
     ScriptedChatModel,
 )
 
@@ -276,3 +280,171 @@ async def test_history_is_passed_to_model() -> None:
         isinstance(message, HumanMessage) and message.content == "之前的问题"
         for message in first_call
     )
+
+
+async def test_order_selection_interrupt_then_resume() -> None:
+    """无订单号提出售后申请时先 interrupt,resume 后只执行一次申请。"""
+    order_tool = FakeOrderListTool()
+    propose_tool = FakeProposeTool()
+    model = ScriptedChatModel(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "propose_after_sales_action",
+                        "args": {"action": "cancel"},
+                        "id": "call_1",
+                    }
+                ],
+            ),
+            AIMessage(content="取消申请已生成,请在卡片中确认。"),
+        ]
+    )
+    agent = MultiStepAgent(
+        chat_model=model,
+        tools={
+            "query_order": order_tool,
+            "propose_after_sales_action": propose_tool,
+        },
+        checkpointer=InMemorySaver(),
+    )
+    thread_id = "session-1:42"
+
+    first = await agent.run(
+        user_message="帮我取消订单",
+        history=[],
+        db=None,
+        user_id=1,
+        session_id="session-1",
+        thread_id=thread_id,
+    )
+
+    assert first.interrupted is True
+    assert first.interrupt is not None
+    assert first.interrupt["type"] == "select_order"
+    assert [item["order_no"] for item in first.interrupt["orders"]] == [
+        "ORDER-A",
+        "ORDER-B",
+    ]
+    assert propose_tool.calls == []
+
+    second = await agent.resume(
+        thread_id,
+        {"type": "select_order", "order_no": "ORDER-B"},
+        db=None,
+    )
+
+    assert second.interrupted is False
+    assert second.response == "取消申请已生成,请在卡片中确认。"
+    assert propose_tool.calls[0]["order_no"] == "ORDER-B"
+    assert second.pending_approval is not None
+    assert any(call["tool"] == "propose_after_sales_action" for call in second.tool_calls)
+
+    with pytest.raises(MultiStepResumeError):
+        await agent.resume(
+            thread_id,
+            {"type": "select_order", "order_no": "ORDER-B"},
+            db=None,
+        )
+
+
+async def test_ticket_confirmation_interrupt_then_resume() -> None:
+    """create_ticket 先确认,resume 确认后只执行一次。"""
+    ticket_tool = FakeTicketTool()
+    model = ScriptedChatModel(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "create_ticket",
+                        "args": {
+                            "type": "consult",
+                            "content": "修改收货地址",
+                        },
+                        "id": "call_1",
+                    }
+                ],
+            ),
+            AIMessage(content="工单已创建,编号 TKT-TEST。"),
+        ]
+    )
+    agent = MultiStepAgent(
+        chat_model=model,
+        tools={"create_ticket": ticket_tool},
+        checkpointer=InMemorySaver(),
+    )
+    thread_id = "session-1:43"
+
+    first = await agent.run(
+        user_message="帮我建个工单修改地址",
+        history=[],
+        db=None,
+        user_id=1,
+        session_id="session-1",
+        thread_id=thread_id,
+    )
+
+    assert first.interrupted is True
+    assert first.interrupt is not None
+    assert first.interrupt["type"] == "confirm_ticket"
+    assert ticket_tool.calls == []
+
+    second = await agent.resume(
+        thread_id,
+        {"type": "confirm_ticket", "confirmed": True},
+        db=None,
+    )
+
+    assert second.interrupted is False
+    assert second.response == "工单已创建,编号 TKT-TEST。"
+    assert len(ticket_tool.calls) == 1
+
+
+async def test_ticket_confirmation_can_be_cancelled() -> None:
+    ticket_tool = FakeTicketTool()
+    model = ScriptedChatModel(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "create_ticket",
+                        "args": {
+                            "type": "consult",
+                            "content": "修改收货地址",
+                        },
+                        "id": "call_1",
+                    }
+                ],
+            ),
+            AIMessage(content="已取消建单。"),
+        ]
+    )
+    agent = MultiStepAgent(
+        chat_model=model,
+        tools={"create_ticket": ticket_tool},
+        checkpointer=InMemorySaver(),
+    )
+    thread_id = "session-1:44"
+
+    first = await agent.run(
+        user_message="帮我建个工单修改地址",
+        history=[],
+        db=None,
+        user_id=1,
+        session_id="session-1",
+        thread_id=thread_id,
+    )
+    assert first.interrupted is True
+
+    second = await agent.resume(
+        thread_id,
+        {"type": "confirm_ticket", "confirmed": False},
+        db=None,
+    )
+
+    assert second.interrupted is False
+    assert ticket_tool.calls == []
+    assert second.response == "已取消建单。"

@@ -13,6 +13,7 @@ const SHOT_DIR = process.env.SHOT_DIR || tmpdir()
 const errors = []
 const browser = await chromium.launch({ channel: 'msedge', headless: true })
 const page = await browser.newPage({ viewport: { width: 1200, height: 900 } })
+const input = page.locator('textarea').first()
 page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`))
 page.on('console', (message) => {
   if (message.type() === 'error') errors.push(`console: ${message.text()}`)
@@ -35,7 +36,7 @@ try {
   console.log('WELCOME_OK:', welcome.includes('我可以帮您查询订单'))
   await page.screenshot({ path: `${SHOT_DIR}/chat-welcome.png` })
 
-  await page.fill('textarea', '查订单 ORDER20260315001')
+  await input.fill('查订单 ORDER20260315001')
   await page.keyboard.press('Enter')
   await page
     .locator('.bubble-bot', { hasText: 'ORDER20260315001' })
@@ -49,17 +50,36 @@ try {
   console.log('FULL_PHONE_HIDDEN:', !orderText.includes('13800006789'))
   await page.screenshot({ path: `${SHOT_DIR}/chat-order.png` })
 
-  await page.fill('textarea', '商品可以退换吗')
+  await input.fill('商品可以退换吗')
   await page.keyboard.press('Enter')
-  await page.waitForSelector('.citation-chip', { timeout: 90000 })
+  await page.waitForFunction(
+    () => {
+      const bubbles = [...document.querySelectorAll('.bubble-bot')]
+      const last = bubbles[bubbles.length - 1]
+      return Boolean(
+        last && last.textContent && last.textContent.includes('退换') && last.textContent.length > 20,
+      )
+    },
+    { timeout: 120000 },
+  )
+  await page.waitForSelector('.citation-chip', { timeout: 30000 })
   await scrollToBottom()
   const ragText = await page.locator('body').innerText()
   console.log('RAG_CITATION_OK:', ragText.includes('退换货政策') || ragText.includes('商品可以退换吗'))
   await page.screenshot({ path: `${SHOT_DIR}/chat-rag.png` })
 
-  await page.fill('textarea', '太差了我要投诉')
+  await input.fill('太差了我要投诉')
   await page.keyboard.press('Enter')
-  await page.waitForSelector('text=转接投诉处理专员', { timeout: 90000 })
+  await page.waitForFunction(
+    () => {
+      const bubbles = [...document.querySelectorAll('.bubble-bot')]
+      const last = bubbles[bubbles.length - 1]
+      const text = (last?.textContent || '').trim()
+      return text.includes('转接') || text.includes('人工') || text.includes('投诉处理')
+    },
+    { timeout: 120000 },
+  )
+  await page.waitForTimeout(600)
   await scrollToBottom()
   const transferText = await page.locator('body').innerText()
   console.log('TRANSFER_OK:', transferText.includes('转接投诉处理专员'))
@@ -97,7 +117,7 @@ try {
   if (process.env.COMPOUND_DEMO === '1') {
     await page.goto(BASE, { waitUntil: 'domcontentloaded' })
     await page.waitForSelector('text=智能客服小e', { timeout: 15000 })
-    await page.fill('textarea', '查订单 ORDER20260401001 然后帮我取消')
+    await input.fill('查订单 ORDER20260401001 然后帮我取消')
     await page.keyboard.press('Enter')
 
     await page.waitForSelector('.approval-card', { timeout: 90000 })

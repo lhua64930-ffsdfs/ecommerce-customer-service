@@ -9,7 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db
 from app.core.config import settings
 from app.models.knowledge import Knowledge
+from app.services.document_service import (
+    delete_document,
+    import_document,
+    list_documents,
+)
 from app.services.rag_service import RAGService
+from app.services.retrieval import RetrievalService
 from app.utils.logger import logger
 
 router = APIRouter()
@@ -34,6 +40,14 @@ class KnowledgeSearch(BaseModel):
     query: str
     top_k: int = 5
     category: str | None = None
+
+
+class DocumentImport(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    content: str = Field(..., min_length=1)
+    source: str | None = Field(None, max_length=300)
+    chunk_size: int = Field(500, ge=100, le=2000)
+    overlap: int = Field(80, ge=0, le=300)
 
 
 def _to_dict(item: Knowledge) -> dict:
@@ -150,8 +164,49 @@ async def delete_knowledge(
     return {"success": True, "id": knowledge_id}
 
 
+@router.get("/documents", summary="文档知识列表")
+async def documents(db: AsyncSession = Depends(get_db)) -> dict:
+    items = await list_documents(db)
+    return {"items": items, "total": len(items)}
+
+
+@router.post("/documents/import", summary="导入/替换 Markdown 文档(自动切块与向量化)")
+async def import_knowledge_document(
+    payload: DocumentImport, db: AsyncSession = Depends(get_db)
+) -> dict:
+    try:
+        result = await import_document(
+            db,
+            title=payload.title,
+            content=payload.content,
+            source=payload.source,
+            chunk_size=payload.chunk_size,
+            overlap=payload.overlap,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    logger.info("文档知识已导入: {} -> {} 个片段", payload.title, result["chunks"])
+    return result
+
+
+@router.delete("/documents/{document_id}", summary="删除文档知识")
+async def remove_document(
+    document_id: int, db: AsyncSession = Depends(get_db)
+) -> dict:
+    removed = await delete_document(db, document_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    return {"success": True, "id": document_id}
+
+
 @router.post("/search", summary="语义检索")
 async def search_knowledge(payload: KnowledgeSearch) -> dict:
     filters = {"category": payload.category} if payload.category else None
-    results = await RAGService().search(payload.query, top_k=payload.top_k, filters=filters)
+    results = await RetrievalService().search(
+        payload.query,
+        top_k=payload.top_k,
+        filters=filters,
+        expand=False,
+        split=False,
+    )
     return {"query": payload.query, "results": results}

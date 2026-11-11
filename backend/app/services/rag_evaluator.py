@@ -38,6 +38,7 @@ class EvalReport:
     mrr_at_5: float
     vector_queries: int
     keyword_queries: int
+    mode_counts: dict[str, int] = field(default_factory=dict)
     per_category: dict[str, dict[str, Any]] = field(default_factory=dict)
     misses: list[dict[str, Any]] = field(default_factory=list)
 
@@ -49,7 +50,8 @@ class EvalReport:
             "recall_at_3": self.recall_at_3,
             "recall_at_5": self.recall_at_5,
             "mrr_at_5": self.mrr_at_5,
-            "retrieval_modes": {
+            "retrieval_modes": self.mode_counts
+            or {
                 "vector": self.vector_queries,
                 "keyword": self.keyword_queries,
             },
@@ -117,6 +119,7 @@ def compute_report(
     reciprocal_sum = 0.0
     vector_queries = 0
     keyword_queries = 0
+    mode_counts: dict[str, int] = {}
     misses: list[dict[str, Any]] = []
 
     category_stats: dict[str, dict[str, int]] = {}
@@ -127,6 +130,7 @@ def compute_report(
         )
         stats["total"] += 1
 
+        mode_counts[mode] = mode_counts.get(mode, 0) + 1
         if mode == "vector":
             vector_queries += 1
         elif mode == "keyword":
@@ -184,18 +188,39 @@ def compute_report(
         mrr_at_5=round(reciprocal_sum / total, 4),
         vector_queries=vector_queries,
         keyword_queries=keyword_queries,
+        mode_counts=mode_counts,
         per_category=per_category,
         misses=misses,
     )
 
 
 async def evaluate(
-    rag_service: RAGService, samples: list[EvalSample], top_k: int = 5
+    rag_service: RAGService,
+    samples: list[EvalSample],
+    top_k: int = 5,
+    strategy: str | None = None,
+    exclude_chunks: bool = True,
 ) -> EvalReport:
-    """逐条检索并汇总指标。"""
+    """逐条检索并汇总指标;默认只评 FAQ,排除文档片段。"""
+    from app.services.retrieval import RetrievalService
+
+    retrieval = RetrievalService(rag_service) if strategy else None
     records: list[tuple[EvalSample, list[int], list[str], str]] = []
     for sample in samples:
-        results = await rag_service.search(sample.query, top_k=top_k)
+        if retrieval is not None:
+            results = await retrieval.search(
+                sample.query,
+                strategy=strategy,
+                top_k=top_k,
+                expand=False,
+                split=False,
+                exclude_chunks=exclude_chunks,
+            )
+            mode = retrieval.last_mode
+        else:
+            results = await rag_service.search(sample.query, top_k=top_k)
+            mode = rag_service.last_search_mode or "unknown"
+
         ranked_ids: list[int] = []
         ranked_questions: list[str] = []
         for item in results:
@@ -204,12 +229,5 @@ async def evaluate(
             except (KeyError, TypeError, ValueError):
                 continue
             ranked_questions.append(str(item.get("question") or ""))
-        records.append(
-            (
-                sample,
-                ranked_ids,
-                ranked_questions,
-                rag_service.last_search_mode or "unknown",
-            )
-        )
+        records.append((sample, ranked_ids, ranked_questions, mode))
     return compute_report(records, top_k=top_k)

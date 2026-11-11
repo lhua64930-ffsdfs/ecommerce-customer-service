@@ -1,7 +1,17 @@
 """会话模型。"""
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Index, Integer, String, func
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -12,6 +22,12 @@ class Session(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True, comment="会话ID")
     session_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, comment="会话唯一标识")
+    tenant_id: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        server_default="default",
+        comment="租户 ID",
+    )
     user_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, comment="用户ID"
     )
@@ -34,6 +50,11 @@ class Session(Base):
         Integer, nullable=False, server_default="0", comment="消息数量"
     )
     satisfaction_score: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="满意度评分")
+    # 长会话摘要:{"text": "...", "upto_message_id": 123}
+    summary: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="会话摘要")
+    summary_upto_message_id: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True, comment="摘要覆盖到的消息ID"
+    )
 
     __table_args__ = (
         Index("idx_session_id", "session_id"),

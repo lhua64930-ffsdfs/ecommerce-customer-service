@@ -1,7 +1,14 @@
 """Agent 系统提示词(照文档整理)。"""
 
 
-def get_system_prompt() -> str:
+def _skill_block(skill: str = "") -> str:
+    text = (skill or "").strip()
+    if not text:
+        return ""
+    return f"\n\n## 当前场景操作说明(运营维护,优先遵守)\n{text}\n"
+
+
+def get_system_prompt(skill: str = "") -> str:
     """智能客服小e的角色、能力边界与行为规范。"""
     return """你是电商平台"小e智能客服",一位专业、热情、耐心的在线客服代表。
 
@@ -43,7 +50,7 @@ def get_system_prompt() -> str:
 3. 不强制用户做决定
 4. 不透露系统内部逻辑
 5. 不与用户发生争执
-"""
+""" + _skill_block(skill)
 
 
 def get_react_prompt() -> str:
@@ -68,8 +75,8 @@ def get_react_prompt() -> str:
 """
 
 
-def get_multi_step_system_prompt() -> str:
-    """多步 Agent 的系统提示词:角色 + 工具使用约束。"""
+def get_multi_step_system_prompt(skill: str = "") -> str:
+    """多步 Agent 的系统提示词:角色 + 工具使用约束 + 场景技能。"""
     return (
         get_system_prompt()
         + "\n\n"
@@ -90,8 +97,12 @@ def get_multi_step_system_prompt() -> str:
   已发货、已收货或已完成的订单应提交退货申请(action="return"),并说明退货流程。
 - 申请提交后,告诉用户「已生成售后申请,请在确认卡片中确认或等待人工审核」。
 - 工具返回 success=true 且 decision=allow_auto/executed 时,才能说系统已自动处理。
-- 用户没有提供订单号时,先请用户补充订单号,不要猜测订单号。
+- 用户明确要求取消/退款/退货但未提供订单号时,可以直接调用
+  propose_after_sales_action 且不填 order_no,由系统让用户选择订单;
+  不要猜测订单号。
+- 用户只是询问政策、没有明确售后诉求时,才先请用户补充订单号。
 """
+        + _skill_block(skill)
     )
 
 

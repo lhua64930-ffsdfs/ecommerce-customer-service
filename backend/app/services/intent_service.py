@@ -94,6 +94,11 @@ class IntentService:
             "keywords": ["你好", "您好", "hi", "hello", "在吗", "在不在"],
             "handler": "llm", "priority": 1,
         },
+        "chitchat": {
+            "name": "闲聊",
+            "keywords": ["谢谢", "哈哈", "晚安", "早上好", "好的", "收到", "再见"],
+            "handler": "llm", "priority": 1,
+        },
         "fallback": {
             "name": "其他",
             "keywords": [],

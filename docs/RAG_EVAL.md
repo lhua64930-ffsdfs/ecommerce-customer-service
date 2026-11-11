@@ -1,18 +1,27 @@
 # RAG 检索评测报告
 
-> 评测对象:`RAGService.search()` 的知识检索排序质量。
+> 评测对象:`RetrievalService.search()` 的检索排序质量。
 > 评测集:`knowledge_base/eval_set.json`;脚本:`backend/scripts/evaluate_rag.py`。
 > 本报告只评估检索排序,不评估 LLM 生成答案。
 
 ## 1. 评测集
 
-- 12 个知识条目,每个条目 3 条自然语言查询,共 **36 条**样本;
+- 12 个种子知识条目,每个条目 3 条自然语言查询,共 **36 条**样本;
 - 每条样本标注 `expected_id`(对应 `knowledge_base/faqs.json` 的条目 id)、
   `category` 与标准问题文本;
 - 查询覆盖退换货、配送、支付、会员、促销、保修、优惠券、发票、
   订单修改、正品、退款到账、人工客服 12 个售后主题。
 
-## 2. 指标定义
+## 2. 检索策略
+
+| 策略 | 实现 |
+| --- | --- |
+| `vector` | BGE 向量 + Milvus COSINE |
+| `bm25` | Milvus 原生 BM25(中文 analyzer) |
+| `hybrid` | 向量 + BM25 并行召回,RRF 融合 |
+| `hybrid_rerank` | hybrid 召回后用本地 `BAAI/bge-reranker-base` 精排 |
+
+## 3. 指标定义
 
 | 指标 | 定义 |
 | --- | --- |
@@ -24,50 +33,72 @@
 命中判定优先比较知识 id;若数据库自增 id 与 `faqs.json` 的参考 id 不一致,
 则用标准问题文本兜底匹配,保证评测可跨环境复现。
 
-## 3. 运行方式
+## 4. 运行方式
 
 ```bash
 cd backend
-./venv/Scripts/python.exe scripts/evaluate_rag.py
+./venv/Scripts/python.exe scripts/evaluate_rag.py --strategy all
 ```
 
-脚本会输出检索模式:
+单策略运行:`--strategy vector|bm25|hybrid|hybrid_rerank`。
+默认只评 FAQ,自动排除文档片段;要对照文档切块影响时加 `--include-chunks`。
+`--json` 输出 JSON,`--output <path>` 写入文件。
 
-- `vector(Milvus 语义检索)`:向量检索正常;
-- `keyword(...)`:Milvus / Embedding 不可用,已降级关键词检索;
-- `mixed`:部分查询降级。
+## 5. 实测结果(12 条种子 FAQ)
 
-同时输出分类别 Recall@3 和未进入前 3 的样本,便于定位检索薄弱环节。
-加 `--json` 可在终端输出 JSON,加 `--output <path>` 可写入文件。
+运行环境:本地开发环境,Milvus 2.5.4 + BGE small zh v1.5 + bge-reranker-base,
+12 条种子知识,`top_k=5`,评测时间 2026-11-11。
 
-## 4. 实测结果
+| 策略 | Recall@1 | Recall@3 | Recall@5 | MRR@5 |
+| --- | --- | --- | --- | --- |
+| vector | 0.9722 | 1.0000 | 1.0000 | 0.9861 |
+| bm25 | 0.8056 | 0.8889 | 0.8889 | 0.8380 |
+| hybrid | 0.8611 | 0.9444 | 1.0000 | 0.9060 |
+| **hybrid_rerank** | **1.0000** | **1.0000** | **1.0000** | **1.0000** |
 
-运行环境:本地开发环境,Milvus 2.5 + BGE small zh v1.5,知识库 12 条,
-`top_k=5`,评测时间 2026-11-06。
-
-| 检索模式 | 样本数 | Recall@1 | Recall@3 | Recall@5 | MRR@5 |
-| --- | --- | --- | --- | --- | --- |
-| vector(Milvus 语义检索) | 36 | 0.9722 | 1.0000 | 1.0000 | 0.9861 |
-
-分类别 Recall@3:
-
-| 分类 | 样本数 | Recall@3 |
-| --- | --- | --- |
-| 优惠券 | 3 | 1.0000 |
-| 会员权益 | 3 | 1.0000 |
-| 促销活动 | 3 | 1.0000 |
-| 发票服务 | 3 | 1.0000 |
-| 售后政策 | 3 | 1.0000 |
-| 商品咨询 | 3 | 1.0000 |
-| 客服联系 | 3 | 1.0000 |
-| 支付问题 | 3 | 1.0000 |
-| 订单服务 | 3 | 1.0000 |
-| 退换货政策 | 3 | 1.0000 |
-| 退款服务 | 3 | 1.0000 |
-| 配送服务 | 3 | 1.0000 |
+`hybrid_rerank` 分类别 Recall@3:12 个分类全部为 1.0000(每个分类 3 条样本)。
 
 说明:
 
-- 36 条样本中 35 条命中第 1 名,1 条排在第 2 名,因此 Recall@1 为 0.9722,
-  Recall@3/5 为 1.0000;
+- BM25 单独使用召回偏弱,直接与向量做 RRF 融合时(hybrid)会被弱召回拖累;
+  本地 CrossEncoder 重排后,`hybrid_rerank` 把 36 条查询全部排到第 1 位。
+- 这组对照说明:**重排是必要的**,不能只做“向量 + 关键词”的简单融合。
 - 原始 JSON 结果见 [rag_eval_result.json](rag_eval_result.json)。
+
+## 6. 加入文档切块后的对照(可选)
+
+导入 `knowledge_base/after_sales_manual.md`(10 个文档片段)后,
+用 `evaluate_rag.py --strategy all --include-chunks` 再跑同一套评测:
+
+| 策略 | Recall@1 | Recall@3 | Recall@5 | MRR@5 |
+| --- | --- | --- | --- | --- |
+| vector | 0.9167 | 1.0000 | 1.0000 | 0.9537 |
+| bm25 | 0.6944 | 0.8611 | 0.8889 | 0.7708 |
+| hybrid | 0.7778 | 0.8889 | 0.8889 | 0.8287 |
+| **hybrid_rerank** | **0.8611** | **0.9722** | **1.0000** | **0.9236** |
+
+指标变化的原因不是答案变差,而是**评测口径**:评测集期望命中 FAQ 的 `knowledge.id`;
+文档片段是另一个知识源,部分问题由更细的章节片段排到第 1,按 FAQ id 判定就是“未命中”。
+这组数据说明文档切块会改变检索排序,评测集需要按知识源分别设计。
+
+原始 JSON:[rag_eval_with_docs_result.json](rag_eval_with_docs_result.json)。
+
+## 7. 无答案拒答评测
+
+评测集:`knowledge_base/unanswerable_questions.json`,20 条知识库外问题;
+同时开启证据置信度闸与 LLM 自检。
+
+```bash
+cd backend
+./venv/Scripts/python.exe scripts/evaluate_refusal.py --self-check
+```
+
+本机实测:
+
+| 样本数 | 正确拒答 | 拒答率 | 检索模式 |
+| --- | --- | --- | --- |
+| 20 | 20 | 1.0000 | hybrid_rerank |
+
+原始 JSON:[refusal_eval_result.json](refusal_eval_result.json)。
+
+> 拒答率会随模型、提示词与阈值变化;该结果是当前配置下的实测,不是通用基准。

@@ -5,7 +5,12 @@ import uuid
 
 import pytest
 
-from app.utils.cache import get_redis, record_rate_hit
+from app.core.config import settings
+from app.utils.cache import (
+    clear_memory_rate_limit,
+    get_redis,
+    record_rate_hit,
+)
 
 
 async def _redis_available() -> bool:
@@ -55,6 +60,38 @@ async def test_rate_limit_fails_open_without_redis(monkeypatch: pytest.MonkeyPat
         async def eval(self, *args: object, **kwargs: object) -> None:
             raise ConnectionError("redis down")
 
+    monkeypatch.setattr(settings, "RATE_LIMIT_BACKEND", "redis")
     monkeypatch.setattr("app.utils.cache.get_redis", lambda: _BoomClient())
 
     assert await record_rate_hit("test:rate:down", limit=1) is None
+
+
+async def test_memory_backend_counts_and_expires(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "RATE_LIMIT_BACKEND", "memory")
+    clear_memory_rate_limit()
+    key = f"test:rate:memory:{uuid.uuid4().hex}"
+
+    assert await record_rate_hit(key, limit=2, now=1000.0) == 1
+    assert await record_rate_hit(key, limit=2, now=1000.1) == 2
+    assert await record_rate_hit(key, limit=2, now=1000.2) == 3
+    assert await record_rate_hit(key, limit=2, now=1000.3) == 3
+    # 窗口滚动后旧记录被清理
+    assert await record_rate_hit(key, limit=2, now=1061.0) == 1
+
+
+async def test_auto_backend_falls_back_to_memory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _BoomClient:
+        async def eval(self, *args: object, **kwargs: object) -> None:
+            raise ConnectionError("redis down")
+
+    monkeypatch.setattr(settings, "RATE_LIMIT_BACKEND", "auto")
+    monkeypatch.setattr("app.utils.cache.get_redis", lambda: _BoomClient())
+    clear_memory_rate_limit()
+    key = f"test:rate:auto:{uuid.uuid4().hex}"
+
+    assert await record_rate_hit(key, limit=1, now=1000.0) == 1
+    assert await record_rate_hit(key, limit=1, now=1000.1) == 2

@@ -3,8 +3,10 @@
 适用于:Milvus 数据丢失、更换 embedding 模型、批量修改知识之后。
 
 用法(在 backend 目录):
-    python scripts/init_vector_db.py
+    python scripts/init_vector_db.py --rebuild   # 删除旧 collection,按 BM25 schema 重建
+    python scripts/init_vector_db.py             # 仅 upsert(旧 collection 无 BM25)
 """
+import argparse
 import asyncio
 import sys
 from pathlib import Path
@@ -20,6 +22,18 @@ from app.services.rag_service import RAGService  # noqa: E402
 
 
 async def main() -> None:
+    parser = argparse.ArgumentParser(description="重建知识向量索引")
+    parser.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="删除旧 collection 并按 BM25 schema 重建(混合检索需要)",
+    )
+    args = parser.parse_args()
+
+    rag = RAGService()
+    if args.rebuild:
+        await rag.drop_collection()
+
     async with AsyncSessionLocal() as session:
         items = (
             (
@@ -46,7 +60,7 @@ async def main() -> None:
             for item in items
         ]
 
-        await RAGService().add_documents(documents)
+        await rag.add_documents(documents)
 
         for item in items:
             item.vector_id = str(item.id)

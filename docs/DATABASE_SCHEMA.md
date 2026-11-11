@@ -41,6 +41,10 @@ products  (独立表)
 | `policy_decisions` | `PolicyDecision` | 策略决策审计 |
 | `verifications` | `Verification` | 会话级订单核验 |
 | `audit_logs` | `AuditLog` | 操作审计 |
+| `low_confidence_questions` | `LowConfidenceQuestion` | 低置信度问题池 |
+| `qa_extraction_staging` | `QaExtractionStaging` | 对话挖知识暂存(待审) |
+| `knowledge_documents` | `KnowledgeDocument` | 文档知识元数据 |
+| `knowledge_chunks` | `KnowledgeChunk` | 文档切块片段 |
 
 ## 关键字段
 
@@ -54,7 +58,8 @@ products  (独立表)
 
 `id`、`session_id`(UUID,唯一)、`user_id`(FK)、`agent_id`、
 `status(active/waiting/transferred/closed)`、`channel`、
-`started_at`、`ended_at`、`last_message_at`、`message_count`、`satisfaction_score`。
+`started_at`、`ended_at`、`last_message_at`、`message_count`、`satisfaction_score`、
+`summary(JSON: text/upto_message_id)`、`summary_upto_message_id`。
 
 ### messages
 
@@ -114,7 +119,7 @@ products  (独立表)
 
 `agent_runs`:`run_id`(唯一)、`session_id`(FK)、`task_id`(FK)、`agent_mode`、
 `status(running/succeeded/failed/awaiting_approval)`、`total_steps`、
-`total_latency_ms`、`started_at`、`finished_at`。
+`total_latency_ms`、`total_tokens`、`started_at`、`finished_at`。
 
 `agent_steps`:`run_id`、`seq`、`step_type(model/tool/policy/approval)`、`name`、
 `input_json`、`output_json`、`success`、`latency_ms`、`created_at`。
@@ -145,6 +150,24 @@ products  (独立表)
 
 `audit_logs`:`user_id`、`session_id`、`action`、`target_type`、`target_id`、
 `detail_json`、`created_at`。
+
+### low_confidence_questions / qa_extraction_staging
+
+`low_confidence_questions`:`session_id`、`user_id`、`query`、
+`source(retrieval_low_conf/self_check)`、`reason`、`retrieved_snapshot(JSON)`、
+`status(pending/approved/discarded)`、`created_at`。
+
+`qa_extraction_staging`:`batch_no`、`source_ref`、`question`、`answer`、
+`status(extracted/approved/discarded)`、`created_at`。
+LLM 抽取的候选先停在这里,人工采纳后才写入 `knowledge`。
+
+### knowledge_documents / knowledge_chunks
+
+`knowledge_documents`:`title`、`source`、`version`、`status`、时间戳。
+
+`knowledge_chunks`:`document_id`(FK)、`section_path`、`chunk_index`、`content`、
+`vector_id`、`is_active`、`created_at`。
+文档片段向量主键使用 `10_000_000 + chunk.id`,避免与 FAQ 的 `knowledge.id` 冲突。
 
 ## 种子数据
 

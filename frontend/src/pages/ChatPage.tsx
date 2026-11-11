@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { Fragment, useEffect, useRef } from 'react'
 import { Alert } from 'antd'
 import EmotionIndicator from '../components/EmotionIndicator'
 import InputBox from '../components/InputBox'
+import InterruptCard from '../components/InterruptCard'
 import MessageBubble from '../components/MessageBubble'
 import QuickReply from '../components/QuickReply'
 import { useChatStore } from '../stores/chatStore'
@@ -53,6 +54,7 @@ export default function ChatPage() {
     error,
     initSession,
     sendMessage,
+    resumeInterrupt,
     clearError,
   } = useChatStore()
 
@@ -163,7 +165,16 @@ export default function ChatPage() {
         )}
 
         {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} />
+          <Fragment key={message.id}>
+            <MessageBubble message={message} />
+            {message.interrupt && (
+              <InterruptCard
+                interrupt={message.interrupt}
+                disabled={isTyping}
+                onResume={(resume) => void resumeInterrupt(message.id, resume)}
+              />
+            )}
+          </Fragment>
         ))}
 
         {isTyping && (

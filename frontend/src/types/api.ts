@@ -61,3 +61,23 @@ export interface KnowledgeSearchResult {
   question: string
   answer: string
 }
+
+export interface ReviewItem {
+  id: number
+  batch_no: string
+  source_ref: string | null
+  question: string
+  answer: string
+  status: string
+  created_at: string | null
+}
+
+export interface KnowledgeDocumentItem {
+  id: number
+  title: string
+  source: string | null
+  version: number
+  status: string
+  chunks: number
+  created_at: string | null
+}

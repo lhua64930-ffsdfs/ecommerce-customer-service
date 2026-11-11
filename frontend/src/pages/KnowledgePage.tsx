@@ -17,12 +17,22 @@ import {
 } from 'antd'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
-import { knowledgeApi, type KnowledgePayload } from '../api/knowledge'
-import type { KnowledgeItem, KnowledgeSearchResult } from '../types/api'
+import { knowledgeApi, reviewApi, type KnowledgePayload } from '../api/knowledge'
+import type {
+  KnowledgeDocumentItem,
+  KnowledgeItem,
+  KnowledgeSearchResult,
+  ReviewItem,
+} from '../types/api'
 
 export default function KnowledgePage() {
   const { message } = App.useApp()
   const [form] = Form.useForm<KnowledgePayload>()
+  const [docForm] = Form.useForm<{
+    title: string
+    source?: string
+    content: string
+  }>()
 
   const [items, setItems] = useState<KnowledgeItem[]>([])
   const [total, setTotal] = useState(0)
@@ -36,6 +46,16 @@ export default function KnowledgePage() {
   const [searchKeyword, setSearchKeyword] = useState('')
   const [searchResults, setSearchResults] = useState<KnowledgeSearchResult[]>([])
   const [searching, setSearching] = useState(false)
+
+  const [reviewItems, setReviewItems] = useState<ReviewItem[]>([])
+  const [reviewLoading, setReviewLoading] = useState(false)
+  const [lowConfCount, setLowConfCount] = useState(0)
+  const [mining, setMining] = useState(false)
+
+  const [documents, setDocuments] = useState<KnowledgeDocumentItem[]>([])
+  const [documentsLoading, setDocumentsLoading] = useState(false)
+  const [docModalOpen, setDocModalOpen] = useState(false)
+  const [docSubmitting, setDocSubmitting] = useState(false)
 
   const load = async (nextPage = page) => {
     setLoading(true)
@@ -51,8 +71,35 @@ export default function KnowledgePage() {
     }
   }
 
+  const loadReview = async () => {
+    setReviewLoading(true)
+    try {
+      const result = await reviewApi.queue()
+      setReviewItems(result.items)
+      setLowConfCount(result.pending_low_confidence)
+    } catch {
+      message.error('待审队列加载失败')
+    } finally {
+      setReviewLoading(false)
+    }
+  }
+
+  const loadDocuments = async () => {
+    setDocumentsLoading(true)
+    try {
+      const result = await knowledgeApi.documents()
+      setDocuments(result.items)
+    } catch {
+      message.error('文档知识加载失败')
+    } finally {
+      setDocumentsLoading(false)
+    }
+  }
+
   useEffect(() => {
     void load(1)
+    void loadReview()
+    void loadDocuments()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -93,6 +140,73 @@ export default function KnowledgePage() {
       message.error('保存失败,请稍后重试')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const mineKnowledge = async () => {
+    setMining(true)
+    try {
+      const result = await reviewApi.mine()
+      if (result.kept > 0) {
+        message.success(`抽取完成:新增 ${result.kept} 条候选知识`)
+      } else {
+        message.info(result.reason || '暂无可抽取的候选知识')
+      }
+      await loadReview()
+    } catch {
+      message.error('知识抽取失败')
+    } finally {
+      setMining(false)
+    }
+  }
+
+  const approveReview = async (item: ReviewItem) => {
+    try {
+      await reviewApi.approve(item.id)
+      message.success('已采纳并写入知识库')
+      await loadReview()
+      await load(1)
+    } catch {
+      message.error('采纳失败')
+    }
+  }
+
+  const discardReview = async (item: ReviewItem) => {
+    try {
+      await reviewApi.discard(item.id)
+      message.success('已弃用')
+      await loadReview()
+    } catch {
+      message.error('操作失败')
+    }
+  }
+
+  const submitDocument = async () => {
+    try {
+      const values = await docForm.validateFields()
+      setDocSubmitting(true)
+      const result = await knowledgeApi.importDocument(values)
+      message.success(
+        `导入成功:${result.chunks} 个片段${result.vectorized ? ',已向量化' : ',向量化失败'}`,
+      )
+      setDocModalOpen(false)
+      docForm.resetFields()
+      await loadDocuments()
+    } catch (error) {
+      if ((error as { errorFields?: unknown }).errorFields) return
+      message.error('文档导入失败')
+    } finally {
+      setDocSubmitting(false)
+    }
+  }
+
+  const removeDocument = async (id: number) => {
+    try {
+      await knowledgeApi.deleteDocument(id)
+      message.success('文档已删除')
+      await loadDocuments()
+    } catch {
+      message.error('删除失败')
     }
   }
 
@@ -172,6 +286,40 @@ export default function KnowledgePage() {
     },
   ]
 
+  const documentColumns: ColumnsType<KnowledgeDocumentItem> = [
+    { title: '标题', dataIndex: 'title', ellipsis: true },
+    {
+      title: '来源',
+      dataIndex: 'source',
+      width: 180,
+      ellipsis: true,
+      render: (value: string | null) => value || '—',
+    },
+    { title: '片段', dataIndex: 'chunks', width: 80 },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      width: 90,
+      render: (value: string) => <Tag color="green">{value}</Tag>,
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 90,
+      render: (_, item) => (
+        <Popconfirm
+          title="确认删除这份文档?"
+          description="删除后会同时移除全部片段向量"
+          onConfirm={() => void removeDocument(item.id)}
+        >
+          <Button type="link" size="small" danger>
+            删除
+          </Button>
+        </Popconfirm>
+      ),
+    },
+  ]
+
   return (
     <div className="app-page">
       <div className="app-page-header">
@@ -214,6 +362,101 @@ export default function KnowledgePage() {
             description={`未检索到与「${searchKeyword}」相关的内容`}
           />
         ) : null}
+      </Card>
+
+      <Card
+        size="small"
+        title={`文档知识(${documents.length})`}
+        style={{ marginBottom: 16 }}
+        extra={
+          <Space>
+            <Button icon={<ReloadOutlined />} onClick={() => void loadDocuments()}>
+              刷新
+            </Button>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => {
+                docForm.resetFields()
+                setDocModalOpen(true)
+              }}
+            >
+              导入 Markdown
+            </Button>
+          </Space>
+        }
+      >
+        <Table
+          rowKey="id"
+          size="small"
+          loading={documentsLoading}
+          columns={documentColumns}
+          dataSource={documents}
+          pagination={false}
+          locale={{ emptyText: '暂无文档知识,可导入 Markdown 长文档' }}
+        />
+      </Card>
+
+      <Card
+        size="small"
+        title={`知识飞轮 · 待审队列(${reviewItems.length})`}
+        style={{ marginBottom: 16 }}
+        extra={
+          <Space>
+            <Tag color={lowConfCount > 0 ? 'orange' : 'default'}>
+              低置信度待处理 {lowConfCount}
+            </Tag>
+            <Button icon={<ReloadOutlined />} onClick={() => void loadReview()}>
+              刷新
+            </Button>
+            <Button loading={mining} onClick={() => void mineKnowledge()}>
+              抽取候选
+            </Button>
+          </Space>
+        }
+      >
+        {reviewLoading ? (
+          <Spin style={{ display: 'block', margin: '24px auto' }} />
+        ) : reviewItems.length > 0 ? (
+          <List
+            dataSource={reviewItems}
+            renderItem={(item) => (
+              <List.Item
+                actions={[
+                  <Button
+                    key="approve"
+                    type="link"
+                    size="small"
+                    onClick={() => void approveReview(item)}
+                  >
+                    采纳
+                  </Button>,
+                  <Popconfirm
+                    key="discard"
+                    title="确认弃用这条候选知识?"
+                    onConfirm={() => void discardReview(item)}
+                  >
+                    <Button type="link" size="small" danger>
+                      弃用
+                    </Button>
+                  </Popconfirm>,
+                ]}
+              >
+                <List.Item.Meta
+                  title={
+                    <Space>
+                      <Tag color="purple">对话沉淀</Tag>
+                      <span>{item.question}</span>
+                    </Space>
+                  }
+                  description={item.answer}
+                />
+              </List.Item>
+            )}
+          />
+        ) : (
+          <Empty description="暂无待审候选知识" />
+        )}
       </Card>
 
       <Card
@@ -287,6 +530,39 @@ export default function KnowledgePage() {
           </Form.Item>
           <Form.Item name="keywords" label="关键词(空格分隔,可选)">
             <Input placeholder="例如:退款 到账 多久" maxLength={500} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="导入 Markdown 文档"
+        open={docModalOpen}
+        confirmLoading={docSubmitting}
+        onOk={() => void submitDocument()}
+        onCancel={() => setDocModalOpen(false)}
+        destroyOnHidden
+        width={760}
+      >
+        <Form form={docForm} layout="vertical" style={{ marginTop: 12 }}>
+          <Form.Item
+            name="title"
+            label="文档标题"
+            rules={[{ required: true, message: '请输入文档标题' }]}
+          >
+            <Input placeholder="例如:售后处理手册" maxLength={200} />
+          </Form.Item>
+          <Form.Item name="source" label="来源(可选)">
+            <Input placeholder="例如:after_sales_manual.md" maxLength={300} />
+          </Form.Item>
+          <Form.Item
+            name="content"
+            label="Markdown 内容"
+            rules={[{ required: true, message: '请输入 Markdown 内容' }]}
+          >
+            <Input.TextArea
+              rows={12}
+              placeholder={'# 售后处理手册\n\n## 退货与退款\n\n### 七天无理由\n...'}
+            />
           </Form.Item>
         </Form>
       </Modal>

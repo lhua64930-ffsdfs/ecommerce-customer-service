@@ -29,6 +29,9 @@ class AgentRun(Base):
     total_latency_ms: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="0", comment="总耗时(毫秒)"
     )
+    total_tokens: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0", comment="总 Token 数(近似)"
+    )
     started_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(), comment="开始时间"
     )

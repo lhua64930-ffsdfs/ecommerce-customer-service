@@ -12,7 +12,7 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.intent import Intent
@@ -38,9 +38,50 @@ def _hash_password(password: str) -> str:
         return "!"
 
 
+async def _ensure_schema_compat(db: AsyncSession) -> None:
+    """开发期兼容:为已有表补新列(无 Alembic 时的最小迁移)。"""
+
+    columns = [
+        ("sessions", "summary", "JSON NULL"),
+        ("sessions", "summary_upto_message_id", "BIGINT NULL"),
+        ("agent_runs", "total_tokens", "INT NULL"),
+        ("users", "display_name", "VARCHAR(64) NULL"),
+        ("users", "token_version", "INT NOT NULL DEFAULT 0"),
+        ("users", "last_login_at", "DATETIME NULL"),
+        ("users", "tenant_id", "VARCHAR(64) NOT NULL DEFAULT 'default'"),
+        ("sessions", "tenant_id", "VARCHAR(64) NOT NULL DEFAULT 'default'"),
+    ]
+    for table, column, definition in columns:
+        exists = await db.scalar(
+            text(
+                "SELECT COUNT(*) FROM information_schema.columns "
+                "WHERE table_schema = DATABASE() "
+                f"AND table_name = '{table}' AND column_name = '{column}'"
+            )
+        )
+        if not exists:
+            await db.execute(
+                text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+            )
+            logger.info("已补充字段: {}.{}", table, column)
+
+    # 枚举扩值:低置信度来源新增实体校验与用户反馈
+    await db.execute(
+        text(
+            "ALTER TABLE low_confidence_questions "
+            "MODIFY COLUMN source ENUM("
+            "'retrieval_low_conf','self_check','answer_guard','user_feedback'"
+            ") NOT NULL"
+        )
+    )
+
+
 async def seed_all(db: AsyncSession) -> None:
     """执行全部种子数据写入。"""
+    await _ensure_schema_compat(db)
     user = await _seed_demo_user(db)
+    await _seed_staff_users(db)
+    await _seed_admin_from_settings(db)
     await _seed_intents(db)
     await _seed_products(db)
     await _seed_orders(db, user.id)
@@ -71,6 +112,61 @@ async def _seed_demo_user(db: AsyncSession) -> User:
     await db.flush()
     logger.info("已创建演示用户 demo_customer (id={})", user.id)
     return user
+
+
+async def _seed_staff_users(db: AsyncSession) -> None:
+    """演示客服/管理员账号,用于 RBAC 与登录测试。"""
+    staff = (
+        ("demo_agent", "agent123", "agent"),
+        ("demo_admin", "admin123", "admin"),
+    )
+    created = 0
+    for username, password, user_type in staff:
+        existing = (
+            await db.execute(select(User).where(User.username == username))
+        ).scalar_one_or_none()
+        if existing is not None:
+            continue
+        db.add(
+            User(
+                username=username,
+                password_hash=_hash_password(password),
+                user_type=user_type,
+                is_active=True,
+            )
+        )
+        created += 1
+    if created:
+        logger.info("已创建 {} 个演示员工账号", created)
+
+
+async def _seed_admin_from_settings(db: AsyncSession) -> None:
+    """生产环境通过 ADMIN_USERNAME/ADMIN_PASSWORD 幂等创建管理员。"""
+    from app.core.config import settings
+
+    username = (settings.ADMIN_USERNAME or "").strip()
+    password = settings.ADMIN_PASSWORD or ""
+    if not username or not password:
+        return
+
+    existing = (
+        await db.execute(select(User).where(User.username == username))
+    ).scalar_one_or_none()
+    if existing is not None:
+        if existing.user_type != "admin":
+            raise RuntimeError(
+                f"ADMIN_USERNAME={username} 已存在且不是管理员,拒绝启动"
+            )
+        return
+    db.add(
+        User(
+            username=username,
+            password_hash=_hash_password(password),
+            user_type="admin",
+            is_active=True,
+        )
+    )
+    logger.info("已创建管理员账号 {}", username)
 
 
 async def _seed_intents(db: AsyncSession) -> None:

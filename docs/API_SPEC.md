@@ -13,11 +13,64 @@
 
 | 状态码 | 含义 |
 | --- | --- |
-| 400 | 请求体解析失败 |
-| 404 | 资源不存在 |
+| 400 | 请求体解析失败 / thread_id 无效 |
+| 401 | 未登录或 token 无效 |
+| 403 | 角色不足或账号停用 |
+| 404 | 资源不存在 / 无权访问 |
+| 409 | 审批/thread 状态冲突 |
 | 422 | 参数校验失败 |
 | 429 | 触发限流 |
 | 500 | 服务内部错误 |
+
+---
+
+## 认证
+
+`AUTH_ENABLED=true` 时,除 `/auth/config`、`/auth/login`、`/auth/register`
+外的 `/api/v1/*` 都需要 `Authorization: Bearer <token>`。
+
+### GET /api/v1/auth/config
+
+返回 `{ "auth_enabled": true, "registration_enabled": true }`。
+
+### POST /api/v1/auth/login
+
+```json
+{ "username": "demo_admin", "password": "admin123" }
+```
+
+返回 `{ "token": "...", "user_id": 1, "username": "demo_admin", "user_type": "admin" }`。
+
+### POST /api/v1/auth/register
+
+`AUTH_ENABLED=true` 且 `REGISTRATION_ENABLED=true` 时可用;角色固定为 customer。
+
+### GET /api/v1/auth/me
+
+返回当前账号 `user_id / username / roles`。
+
+### POST /api/v1/auth/change-password
+
+`{ "old_password": "...", "new_password": "..." }`。
+
+### 短信登录(需 AUTH_ENABLED=true)
+
+- `POST /api/v1/auth/sms/send` `{ "phone": "13900000000" }`;
+  `SMS_DEBUG_RETURN_CODE=true` 时返回 `debug_code`;
+- `POST /api/v1/auth/sms/login` `{ "phone": "...", "code": "123456" }` →
+  token;手机号不存在时自动创建 customer。
+
+### 扫码登录(需 AUTH_ENABLED=true)
+
+- `POST /api/v1/auth/qr/start` → `{ ticket, expires_in, url }`;
+- `POST /api/v1/auth/qr/approve`(Bearer)`{ "ticket": "..." }`;
+- `GET /api/v1/auth/qr/status?ticket=...` → `pending/approved/expired/consumed`;
+  approved 时返回 token 并标记 consumed。
+
+### 租户
+
+注册、管理员建用户可传 `tenant_id`;JWT 带 `tenant`,会话按租户隔离,
+跨租户访问返回 404。
 
 ---
 
@@ -84,10 +137,32 @@
   "tool_calls": [{ "tool": "query_order", "success": true }],
   "citations": [],
   "pending_approval": null,
+  "evidence_status": null,
   "run_id": "a1b2c3d4e5f6...",
-  "agent_mode": "multi_step"
+  "agent_mode": "multi_step",
+  "thread_id": "session-uuid:42",
+  "interrupt": null
 }
 ```
+
+多步图缺订单号时会返回:
+
+```json
+{
+  "interrupt": {
+    "type": "select_order",
+    "message": "请选择要办理的订单",
+    "orders": [{ "order_no": "ORDER20260401001", "status": "paid" }]
+  },
+  "thread_id": "session-uuid:42"
+}
+```
+
+`evidence_status` 仅 RAG 路径有值:`sufficient` / `insufficient`;证据不足时
+`citations=[]` 且回复为固定兜底话术。
+
+MCP 开启时,`tool_calls` 可能带可选的 `transport` 字段:`mcp`(远程执行)或
+`local_fallback`(MCP 不可用,回退进程内工具);未开启或进程内执行时不带该字段。
 
 `citations` 为 RAG 回答引用的知识条目;非 RAG 路径返回空数组:
 
@@ -120,6 +195,7 @@
     "requires_verification": true,
     "requires_human": false
   },
+  "evidence_status": null,
   "run_id": "a1b2c3d4e5f6...",
   "agent_mode": "multi_step"
 }
@@ -188,6 +264,60 @@
 | `approval_not_found` | 审批单不存在或不属于当前会话 |
 | `order_not_found` | 订单不存在或不属于当前账号 |
 | `invalid_status` | 审批单状态不允许当前操作 |
+
+### POST /api/v1/chat/send-stream
+
+SSE 流式发送消息。请求体同 `/chat/send`;响应 `text/event-stream`,
+每条事件为 `data: {json}`:
+
+| 事件 | 说明 |
+| --- | --- |
+| `meta` | 意图、情感、情感分 |
+| `delta` | 回答文本片段(RAG 路径逐 token) |
+| `tool` | 工具调用名称/成功标志(工具路径) |
+| `citations` | RAG 引用列表 |
+| `actions` | 快捷回复与 `pending_approval` |
+| `interrupt` | 图暂停:`thread_id`、`kind`、`orders` / `message` |
+| `error` | 流处理错误 |
+| `done` | `message_id`、`run_id` 与完整结果 |
+
+```text
+data: {"event":"meta","intent":{...},"sentiment":"neutral","sentiment_score":0.0}
+
+data: {"event":"delta","text":"商品支持"}
+
+data: {"event":"citations","items":[{...}]}
+
+data: {"event":"actions","quick_replies":[...],"pending_approval":null}
+
+data: {"event":"done","message_id":88,"run_id":"...","result":{...}}
+```
+
+### POST /api/v1/chat/resume
+
+继续被 interrupt 暂停的多步图。请求:
+
+```json
+{
+  "session_id": "xxx",
+  "thread_id": "xxx:42",
+  "resume": { "type": "select_order", "order_no": "ORDER20260401001" }
+}
+```
+
+工单确认场景:
+
+```json
+{
+  "session_id": "xxx",
+  "thread_id": "xxx:43",
+  "resume": { "type": "confirm_ticket", "confirmed": true }
+}
+```
+
+`confirmed=false` 时不执行建单。返回 `response / thread_id / interrupt /
+pending_approval / tool_calls / citations / run_id / message_id / agent_mode`。
+thread 不属于该会话、已过期或没有 pending interrupt 时返回 409。
 
 ### GET /api/v1/chat/history
 
@@ -319,6 +449,90 @@
 
 ---
 
+## 文档知识
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/v1/knowledge/documents` | 文档列表与片段数 |
+| POST | `/api/v1/knowledge/documents/import` | 导入/替换 Markdown 文档 |
+| DELETE | `/api/v1/knowledge/documents/{id}` | 删除文档与片段向量 |
+
+导入请求:
+
+```json
+{
+  "title": "售后处理手册",
+  "source": "after_sales_manual.md",
+  "content": "# 售后处理手册\n\n## 退货与退款\n...",
+  "chunk_size": 500,
+  "overlap": 80
+}
+```
+
+响应:`{ "document_id": 1, "chunks": 10, "vectorized": true }`。
+
+## 用户反馈
+
+### POST /api/v1/feedback
+
+```json
+{ "session_id": "xxx", "question": "质量问题怎么退换", "rating": "down", "comment": "没解决" }
+```
+
+👍 只记日志;👎 写入低置信度池,响应 `{"success": true, "pooled": true, "id": 3}`。
+
+## RAG 评测看板
+
+### GET /api/v1/rag-eval/overview
+
+只读 `docs/rag_eval_result.json` 与 `docs/refusal_eval_result.json`:
+四策略 Recall/MRR、最佳策略、无答案拒答率与生成时间。没有产物时返回
+`present=false` 和运行命令,不在接口里重算。
+
+## 后台作业
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/v1/jobs` | 作业列表与状态 |
+| POST | `/api/v1/jobs/{name}` | 启动白名单作业 |
+| GET | `/api/v1/jobs/{name}` | 状态 + 日志尾部 |
+| POST | `/api/v1/jobs/{name}/stop` | 停止作业 |
+
+作业名:`evaluate-rag`、`evaluate-refusal`、`mine-knowledge`、`import-manual`、
+`reset-demo-data`。argv 写死在 `app/core/jobs.py`,前端只能传作业名,不能传参数或路径。
+
+## 知识飞轮
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/v1/review/queue` | 待审候选知识 + 低置信度待处理数 |
+| POST | `/api/v1/review/mine` | 从低置信度问题/对话抽取候选知识 |
+| POST | `/api/v1/review/{id}/approve` | 采纳候选并写入知识库、向量化 |
+| POST | `/api/v1/review/{id}/discard` | 弃用候选 |
+
+`GET /review/queue` 响应:
+
+```json
+{
+  "items": [
+    {
+      "id": 7,
+      "batch_no": "mine-20261111173126",
+      "source_ref": "low_confidence",
+      "question": "订单已发货后如何查询物流?",
+      "answer": "订单发货后可凭运单号在快递官网或小程序查询物流进度。",
+      "status": "extracted",
+      "created_at": "2026-11-11T17:31:26"
+    }
+  ],
+  "total": 1,
+  "pending_low_confidence": 2
+}
+```
+
+候选知识不会自动入库;`approve` 后才写 `knowledge` 并重建向量,
+`discard` 只改状态,保留审计记录。
+
 ## 订单 / 商品
 
 | 方法 | 路径 | 参数 |
@@ -358,10 +572,55 @@
 
 ---
 
+## 管理员用户(需 admin)
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/v1/admin/users` | 分页用户列表(不返回密码哈希) |
+| POST | `/api/v1/admin/users` | 创建用户:username/password/user_type/email/display_name |
+| PATCH | `/api/v1/admin/users/{id}` | 调整 user_type / is_active / display_name |
+| POST | `/api/v1/admin/users/{id}/reset-password` | 重置密码并 bump token 版本 |
+
+改角色、禁用、改密后,该用户旧 JWT 立即失效(401)。
+
+## 可观测(需 admin)
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/v1/observability/overview?days=7` | 运行状态/耗时/Token、失败工具、低置信度、审批分布 |
+| GET | `/api/v1/observability/runs?days=7&limit=50` | 最近 Agent 运行 |
+| GET | `/api/v1/observability/runs/{run_id}` | 运行详情 + 步骤回放 |
+| GET | `/api/v1/observability/cost?days=30` | 按天 Token 成本(本地近似) |
+
 ## 健康检查
 
 ### GET /health
 
 ```json
-{ "status": "healthy", "database": true, "redis": true, "milvus": true, "version": "1.0.0" }
+{ "status": "healthy", "database": true, "redis": true, "redis_configured": true,
+  "milvus": true, "checkpointer": "sqlite", "version": "1.0.0" }
 ```
+
+---
+
+## MCP 工具服务(独立进程)
+
+两个 MCP Server,不属于 `/api/v1`:
+
+| Server | 端口 | 工具 |
+| --- | --- | --- |
+| knowledge | 8001 | `search_knowledge`、`query_product` |
+| aftersales | 8002 | `query_order`、`propose_after_sales_action`、`transfer_human`、`create_ticket` |
+
+### GET http://<mcp-host>:8001/health 与 :8002/health
+
+```json
+{ "status": "ok", "service": "after-sales-knowledge", "version": "1.0.0" }
+{ "status": "ok", "service": "after-sales-aftersales", "version": "1.0.0" }
+```
+
+### POST http://<mcp-host>:8001/mcp 与 :8002/mcp
+
+MCP Streamable HTTP 端点,协议由 MCP SDK 处理。
+`user_id` / `session_id` / `user_message` 为后端注入的内部上下文,
+不对模型展示;端口不应暴露到公网。

@@ -86,6 +86,79 @@ services:
       timeout: 20s
       retries: 5
 
+  # ---------------- MCP 工具服务(多 Server) ----------------
+  # 只暴露在 Docker 内部网络,不映射到宿主机
+  mcp-knowledge:
+    build:
+      context: ../backend
+      dockerfile: ../docker/backend/Dockerfile
+    container_name: cs-mcp-knowledge
+    restart: unless-stopped
+    command: ["python", "-m", "app.mcp", "knowledge"]
+    environment:
+      DATABASE_URL: mysql+aiomysql://cs_user:cs_password@mysql:3306/customer_service?charset=utf8mb4
+      MILVUS_URI: http://milvus:19530
+      MILVUS_COLLECTION: knowledge_base
+      MCP_SERVER_HOST: 0.0.0.0
+      MCP_KNOWLEDGE_PORT: "8001"
+      HF_ENDPOINT: https://hf-mirror.com
+    volumes:
+      - ../knowledge_base:/workspace/knowledge_base:ro
+      - ../config:/workspace/config:ro
+      - app_logs:/workspace/logs
+      - hf_cache:/root/.cache/huggingface
+    depends_on:
+      mysql:
+        condition: service_healthy
+      milvus:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8001/health', timeout=5)",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  mcp-aftersales:
+    build:
+      context: ../backend
+      dockerfile: ../docker/backend/Dockerfile
+    container_name: cs-mcp-aftersales
+    restart: unless-stopped
+    command: ["python", "-m", "app.mcp", "aftersales"]
+    environment:
+      DATABASE_URL: mysql+aiomysql://cs_user:cs_password@mysql:3306/customer_service?charset=utf8mb4
+      REDIS_URL: redis://redis:6379/0
+      MCP_SERVER_HOST: 0.0.0.0
+      MCP_AFTERSALES_PORT: "8002"
+    volumes:
+      - ../knowledge_base:/workspace/knowledge_base:ro
+      - ../config:/workspace/config:ro
+      - app_logs:/workspace/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8002/health', timeout=5)",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
   # ---------------- 后端 ----------------
   backend:
     build:
@@ -104,17 +177,27 @@ services:
       LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-please-change-this-secret-in-production}
       HF_ENDPOINT: https://hf-mirror.com
+      MCP_ENABLED: ${MCP_ENABLED:-true}
+      MCP_KNOWLEDGE_URL: http://mcp-knowledge:8001/mcp
+      MCP_AFTERSALES_URL: http://mcp-aftersales:8002/mcp
+      CHECKPOINTER_BACKEND: sqlite
+      CHECKPOINTER_DB_PATH: data/checkpoints.sqlite
     volumes:
       - ../knowledge_base:/workspace/knowledge_base:ro
       - ../config:/workspace/config:ro
       - app_logs:/workspace/logs
       - hf_cache:/root/.cache/huggingface
+      - checkpoint_data:/workspace/backend/data
     depends_on:
       mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
       milvus:
+        condition: service_healthy
+      mcp-knowledge:
+        condition: service_healthy
+      mcp-aftersales:
         condition: service_healthy
     ports:
       - "8000:8000"
@@ -154,3 +237,4 @@ volumes:
   milvus_data:
   app_logs:
   hf_cache:
+  checkpoint_data:

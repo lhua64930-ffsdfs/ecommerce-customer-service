@@ -19,6 +19,7 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY app ./app
 COPY scripts ./scripts
+COPY skills ./skills
 
 RUN mkdir -p /workspace/logs /workspace/knowledge_base /workspace/config
 

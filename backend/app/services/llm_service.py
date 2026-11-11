@@ -10,12 +10,43 @@ from __future__ import annotations
 import asyncio
 from typing import Any, AsyncIterator
 
+from app.core import circuit
 from app.core.config import settings
+from app.core.observability import langfuse_enabled
 from app.utils.logger import logger
 
 
 class LLMError(RuntimeError):
     """LLM 调用失败。"""
+
+
+class TerminalLLMError(LLMError):
+    """鉴权/余额等不可重试错误。"""
+
+
+def _is_terminal_error(exc: Exception) -> bool:
+    status = getattr(exc, "status_code", None)
+    if status in (401, 402, 403):
+        return True
+    text = str(exc).lower()
+    return any(
+        marker in text
+        for marker in ("insufficient", "余额不足", "quota", "402")
+    )
+
+
+def _usage_dict(response: Any) -> dict[str, int] | None:
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return None
+    prompt = int(getattr(usage, "prompt_tokens", 0) or 0)
+    completion = int(getattr(usage, "completion_tokens", 0) or 0)
+    total = int(getattr(usage, "total_tokens", 0) or 0) or prompt + completion
+    return {
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "total_tokens": total,
+    }
 
 
 class LLMService:
@@ -44,15 +75,29 @@ class LLMService:
         if self.is_mock:
             logger.warning("LLM API Key 未配置,已启用 mock 模式(可继续开发与测试)")
         else:
-            from openai import AsyncOpenAI
-
-            self._client = AsyncOpenAI(
-                api_key=self.api_key,
-                base_url=settings.LLM_API_BASE,
-                timeout=settings.LLM_TIMEOUT,
-                max_retries=0,  # 重试由本类控制
-            )
+            self._client = self._create_client()
             logger.info("LLM 初始化完成: provider={} model={}", self.provider, self.model)
+
+    def _create_client(self) -> Any:
+        """启用 Langfuse 时用其 OpenAI 包装器自动上报 generation。"""
+        client_kwargs: dict[str, Any] = {
+            "api_key": self.api_key,
+            "base_url": settings.LLM_API_BASE,
+            "timeout": settings.LLM_TIMEOUT,
+            "max_retries": 0,  # 重试由本类控制
+        }
+        if langfuse_enabled():
+            try:
+                from langfuse.openai import AsyncOpenAI as ObservedAsyncOpenAI
+
+                logger.info("Langfuse OpenAI generation 埋点已启用")
+                return ObservedAsyncOpenAI(**client_kwargs)
+            except Exception as exc:  # noqa: BLE001 - 观测失败不阻断 LLM
+                logger.warning("Langfuse OpenAI 埋点初始化失败,回退原生客户端: {}", exc)
+
+        from openai import AsyncOpenAI
+
+        return AsyncOpenAI(**client_kwargs)
 
     def _get_semaphore(self) -> asyncio.Semaphore:
         # 延迟创建,确保绑定到当前事件循环
@@ -67,13 +112,29 @@ class LLMService:
         max_tokens: int | None = None,
         json_mode: bool = False,
     ) -> str:
-        """对话补全,返回文本内容。
+        """对话补全,返回文本内容。"""
+        text, _ = await self.chat_with_usage(
+            messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            json_mode=json_mode,
+        )
+        return text
+
+    async def chat_with_usage(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        json_mode: bool = False,
+    ) -> tuple[str, dict[str, int] | None]:
+        """对话补全,同时返回 token usage(上游未返回时为 None)。
 
         Raises:
             LLMError: 重试后仍失败
         """
         if self.is_mock:
-            return self._mock_reply(messages)
+            return self._mock_reply(messages), None
 
         kwargs: dict[str, Any] = {
             "model": self.model,
@@ -88,16 +149,31 @@ class LLMService:
         for attempt in range(3):
             try:
                 async with self._get_semaphore():
-                    response = await self._client.chat.completions.create(**kwargs)
+                    response = await circuit.chat_breaker.call(
+                        self._client.chat.completions.create, **kwargs
+                    )
                 content = (response.choices[0].message.content or "").strip()
                 if content:
-                    return content
+                    return content, _usage_dict(response)
                 raise LLMError("LLM 返回内容为空")
+            except circuit.CircuitOpenError as exc:
+                # 熔断期间重试没有意义,直接交给上层走 mock/兜底
+                raise LLMError("LLM 上游熔断中,请稍后重试") from exc
             except Exception as exc:  # noqa: BLE001 - 上游异常类型较多
+                if _is_terminal_error(exc):
+                    raise TerminalLLMError(
+                        f"LLM 鉴权/余额错误,不重试: {exc}"
+                    ) from exc
                 last_error = exc
-                wait = min(2**attempt, 8)
-                logger.warning("LLM 调用失败(第 {} 次): {}, {}s 后重试", attempt + 1, exc, wait)
-                await asyncio.sleep(wait)
+                if attempt < 2:
+                    wait = min(2**attempt, 8)
+                    logger.warning(
+                        "LLM 调用失败(第 {} 次): {}, {}s 后重试",
+                        attempt + 1,
+                        exc,
+                        wait,
+                    )
+                    await asyncio.sleep(wait)
 
         raise LLMError(f"LLM 调用失败: {last_error}")
 
@@ -123,18 +199,28 @@ class LLMService:
                 yield chunk
             return
 
-        async with self._get_semaphore():
-            stream = await self._client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=settings.LLM_TEMPERATURE,
-                max_tokens=settings.LLM_MAX_TOKENS,
-                stream=True,
-            )
-            async for event in stream:
-                delta = event.choices[0].delta.content if event.choices else None
-                if delta:
-                    yield delta
+        try:
+            async with self._get_semaphore():
+                stream = await circuit.chat_breaker.call(
+                    self._client.chat.completions.create,
+                    model=self.model,
+                    messages=messages,
+                    temperature=settings.LLM_TEMPERATURE,
+                    max_tokens=settings.LLM_MAX_TOKENS,
+                    stream=True,
+                )
+                async for event in stream:
+                    delta = event.choices[0].delta.content if event.choices else None
+                    if delta:
+                        yield delta
+        except circuit.CircuitOpenError as exc:
+            raise LLMError("LLM 上游熔断中,请稍后重试") from exc
+        except Exception as exc:  # noqa: BLE001
+            if _is_terminal_error(exc):
+                raise TerminalLLMError(
+                    f"LLM 鉴权/余额错误,不重试: {exc}"
+                ) from exc
+            raise
 
     # ---------------- mock 模式 ----------------
     def _mock_reply(self, messages: list[dict[str, str]]) -> str:

@@ -1,87 +1,464 @@
 {
   "total": 36,
   "top_k": 5,
-  "recall_at_1": 0.9722,
-  "recall_at_3": 1.0,
-  "recall_at_5": 1.0,
-  "mrr_at_5": 0.9861,
-  "retrieval_modes": {
-    "vector": 36,
-    "keyword": 0
-  },
-  "per_category": {
-    "优惠券": {
-      "total": 3,
+  "strategies": {
+    "vector": {
+      "total": 36,
+      "top_k": 5,
+      "recall_at_1": 0.9722,
+      "recall_at_3": 1.0,
+      "recall_at_5": 1.0,
+      "mrr_at_5": 0.9861,
+      "retrieval_modes": {
+        "vector": 36
+      },
+      "per_category": {
+        "优惠券": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "会员权益": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "促销活动": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "发票服务": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "售后政策": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "商品咨询": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "客服联系": {
+          "total": 3,
+          "recall_at_1": 0.6667,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "支付问题": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "订单服务": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "退换货政策": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "退款服务": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "配送服务": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        }
+      },
+      "misses": []
+    },
+    "bm25": {
+      "total": 36,
+      "top_k": 5,
+      "recall_at_1": 0.8056,
+      "recall_at_3": 0.8889,
+      "recall_at_5": 0.8889,
+      "mrr_at_5": 0.838,
+      "retrieval_modes": {
+        "bm25": 36
+      },
+      "per_category": {
+        "优惠券": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "会员权益": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "促销活动": {
+          "total": 3,
+          "recall_at_1": 0.3333,
+          "recall_at_3": 0.6667,
+          "recall_at_5": 0.6667
+        },
+        "发票服务": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "售后政策": {
+          "total": 3,
+          "recall_at_1": 0.3333,
+          "recall_at_3": 0.6667,
+          "recall_at_5": 0.6667
+        },
+        "商品咨询": {
+          "total": 3,
+          "recall_at_1": 0.6667,
+          "recall_at_3": 0.6667,
+          "recall_at_5": 0.6667
+        },
+        "客服联系": {
+          "total": 3,
+          "recall_at_1": 0.6667,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "支付问题": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "订单服务": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "退换货政策": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "退款服务": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "配送服务": {
+          "total": 3,
+          "recall_at_1": 0.6667,
+          "recall_at_3": 0.6667,
+          "recall_at_5": 0.6667
+        }
+      },
+      "misses": [
+        {
+          "query": "下单后一般几天能送到",
+          "expected_id": 2,
+          "rank": null,
+          "top_ids": [
+            9,
+            8,
+            11
+          ],
+          "top_questions": [
+            "订单可以修改地址吗",
+            "可以开发票吗",
+            "退款多久到账"
+          ],
+          "mode": "bm25"
+        },
+        {
+          "query": "双十一有折扣吗",
+          "expected_id": 5,
+          "rank": null,
+          "top_ids": [
+            4,
+            10,
+            9,
+            8,
+            1
+          ],
+          "top_questions": [
+            "会员有什么优惠",
+            "商品是正品吗",
+            "订单可以修改地址吗",
+            "可以开发票吗",
+            "商品可以退换吗"
+          ],
+          "mode": "bm25"
+        },
+        {
+          "query": "商品坏了可以免费维修吗",
+          "expected_id": 6,
+          "rank": null,
+          "top_ids": [
+            1,
+            10,
+            9,
+            8,
+            2
+          ],
+          "top_questions": [
+            "商品可以退换吗",
+            "商品是正品吗",
+            "订单可以修改地址吗",
+            "可以开发票吗",
+            "配送时间是多久"
+          ],
+          "mode": "bm25"
+        },
+        {
+          "query": "买到假货怎么办",
+          "expected_id": 10,
+          "rank": null,
+          "top_ids": [
+            13,
+            7,
+            11
+          ],
+          "top_questions": [
+            "怎么联系人工客服",
+            "优惠券怎么使用",
+            "退款多久到账"
+          ],
+          "mode": "bm25"
+        }
+      ]
+    },
+    "hybrid": {
+      "total": 36,
+      "top_k": 5,
+      "recall_at_1": 0.8611,
+      "recall_at_3": 0.9444,
+      "recall_at_5": 1.0,
+      "mrr_at_5": 0.906,
+      "retrieval_modes": {
+        "hybrid": 36
+      },
+      "per_category": {
+        "优惠券": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "会员权益": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "促销活动": {
+          "total": 3,
+          "recall_at_1": 0.6667,
+          "recall_at_3": 0.6667,
+          "recall_at_5": 1.0
+        },
+        "发票服务": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "售后政策": {
+          "total": 3,
+          "recall_at_1": 0.6667,
+          "recall_at_3": 0.6667,
+          "recall_at_5": 1.0
+        },
+        "商品咨询": {
+          "total": 3,
+          "recall_at_1": 0.6667,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "客服联系": {
+          "total": 3,
+          "recall_at_1": 0.6667,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "支付问题": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "订单服务": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "退换货政策": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "退款服务": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "配送服务": {
+          "total": 3,
+          "recall_at_1": 0.6667,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        }
+      },
+      "misses": [
+        {
+          "query": "双十一有折扣吗",
+          "expected_id": 5,
+          "rank": 5,
+          "top_ids": [
+            4,
+            10,
+            1,
+            8,
+            5
+          ],
+          "top_questions": [
+            "会员有什么优惠",
+            "商品是正品吗",
+            "商品可以退换吗",
+            "可以开发票吗",
+            "近期有什么优惠活动"
+          ],
+          "mode": "hybrid"
+        },
+        {
+          "query": "商品坏了可以免费维修吗",
+          "expected_id": 6,
+          "rank": 4,
+          "top_ids": [
+            1,
+            10,
+            9,
+            6,
+            11
+          ],
+          "top_questions": [
+            "商品可以退换吗",
+            "商品是正品吗",
+            "订单可以修改地址吗",
+            "保修期是多久",
+            "退款多久到账"
+          ],
+          "mode": "hybrid"
+        }
+      ]
+    },
+    "hybrid_rerank": {
+      "total": 36,
+      "top_k": 5,
       "recall_at_1": 1.0,
       "recall_at_3": 1.0,
-      "recall_at_5": 1.0
-    },
-    "会员权益": {
-      "total": 3,
-      "recall_at_1": 1.0,
-      "recall_at_3": 1.0,
-      "recall_at_5": 1.0
-    },
-    "促销活动": {
-      "total": 3,
-      "recall_at_1": 1.0,
-      "recall_at_3": 1.0,
-      "recall_at_5": 1.0
-    },
-    "发票服务": {
-      "total": 3,
-      "recall_at_1": 1.0,
-      "recall_at_3": 1.0,
-      "recall_at_5": 1.0
-    },
-    "售后政策": {
-      "total": 3,
-      "recall_at_1": 1.0,
-      "recall_at_3": 1.0,
-      "recall_at_5": 1.0
-    },
-    "商品咨询": {
-      "total": 3,
-      "recall_at_1": 1.0,
-      "recall_at_3": 1.0,
-      "recall_at_5": 1.0
-    },
-    "客服联系": {
-      "total": 3,
-      "recall_at_1": 0.6667,
-      "recall_at_3": 1.0,
-      "recall_at_5": 1.0
-    },
-    "支付问题": {
-      "total": 3,
-      "recall_at_1": 1.0,
-      "recall_at_3": 1.0,
-      "recall_at_5": 1.0
-    },
-    "订单服务": {
-      "total": 3,
-      "recall_at_1": 1.0,
-      "recall_at_3": 1.0,
-      "recall_at_5": 1.0
-    },
-    "退换货政策": {
-      "total": 3,
-      "recall_at_1": 1.0,
-      "recall_at_3": 1.0,
-      "recall_at_5": 1.0
-    },
-    "退款服务": {
-      "total": 3,
-      "recall_at_1": 1.0,
-      "recall_at_3": 1.0,
-      "recall_at_5": 1.0
-    },
-    "配送服务": {
-      "total": 3,
-      "recall_at_1": 1.0,
-      "recall_at_3": 1.0,
-      "recall_at_5": 1.0
+      "recall_at_5": 1.0,
+      "mrr_at_5": 1.0,
+      "retrieval_modes": {
+        "hybrid_rerank": 36
+      },
+      "per_category": {
+        "优惠券": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "会员权益": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "促销活动": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "发票服务": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "售后政策": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "商品咨询": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "客服联系": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "支付问题": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "订单服务": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "退换货政策": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "退款服务": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        },
+        "配送服务": {
+          "total": 3,
+          "recall_at_1": 1.0,
+          "recall_at_3": 1.0,
+          "recall_at_5": 1.0
+        }
+      },
+      "misses": []
     }
-  },
-  "misses": []
+  }
 }

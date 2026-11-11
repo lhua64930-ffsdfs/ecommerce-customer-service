@@ -247,7 +247,7 @@ cd backend
 
 ---
 
-## 4. 场景 C:RAG 知识问答 + 结构化引用
+## 4. 场景 C:RAG 2.0(混合检索 + 引用 + 证据闸)
 
 ```bash
 curl -s -X POST http://127.0.0.1:8000/api/v1/chat/send \
@@ -259,9 +259,9 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/chat/send \
 
 ```json
 {
-  "response": "根据平台规则:7天内可无理由退换货...",
+  "response": "商品支持退换:7天内可无理由退换货...",
   "intent": {
-    "intent_code": "product_inquiry",
+    "intent_code": "after_sale",
     "handler_type": "rag"
   },
   "citations": [
@@ -269,20 +269,60 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/chat/send \
       "id": 1,
       "category": "退换货政策",
       "question": "商品可以退换吗",
-      "score": 0.77
+      "score": 0.73
     }
   ],
+  "evidence_status": "sufficient",
   "agent_mode": "single_step"
 }
 ```
 
 **讲解词**:
 
-> RAG 检索结果不仅拼进上下文,还会转成结构化 `citations` 随响应返回;
-> 前端在回答下方展示「[1] 商品可以退换吗 0.93」的来源标签,
-> 历史消息与会话回放也会保留这些引用,回答可追溯。
+> 这条回答走的是 RAG 2.0:向量 + BM25 混合召回,RRF 融合,
+> 本地 bge-reranker 精排;证据置信度和自检通过后才生成回答。
+> `citations` 会随响应返回并写入消息元数据,前端展示来源标签,
+> 历史回放也能看到引用。
 
-也可以直接调用检索接口,展示向量检索结果:
+### SSE 流式
+
+```bash
+curl -N -X POST http://127.0.0.1:8000/api/v1/chat/send-stream \
+  -H "Content-Type: application/json" \
+  -d "{\"session_id\":\"$SESSION_ID\",\"content\":\"商品可以退换吗\"}"
+```
+
+事件顺序:`meta` → `citations` → 多个 `delta` → `actions` → `done`。
+RAG 路径是逐 token 输出,前端有打字机效果。
+
+### RAG 拒答 + 低置信度池
+
+问一个知识库外的问题:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/v1/chat/send \
+  -H "Content-Type: application/json" \
+  -d "{\"session_id\":\"$SESSION_ID\",\"content\":\"你们支持火星配送吗\"}"
+```
+
+预期:
+
+```json
+{
+  "response": "抱歉,我暂时没有找到足够可靠的依据来回答这个问题...",
+  "citations": [],
+  "evidence_status": "insufficient",
+  "agent_mode": "single_step"
+}
+```
+
+**讲解词**:
+
+> 证据闸会计算四个信号(Top1 分、有效证据数、分差、关键条款命中)。
+> 低于阈值不生成,直接兜底;问题会进入低置信度池,后续由知识飞轮处理。
+> 这比“检索到一点相关内容就硬答”安全得多。
+
+也可以直接调用检索接口,展示混合检索结果:
 
 ```bash
 curl -s -X POST http://127.0.0.1:8000/api/v1/knowledge/search \
@@ -296,26 +336,27 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/knowledge/search \
 
 ```bash
 cd backend
-./venv/Scripts/python.exe scripts/evaluate_rag.py
+./venv/Scripts/python.exe scripts/evaluate_rag.py --strategy all
 ```
 
 本机实测输出:
 
 ```text
-RAG 检索评测
-  样本数:36    top_k:5
-  检索模式:vector(Milvus 语义检索)
-  Recall@1:0.9722
-  Recall@3:1.0000
-  Recall@5:1.0000
-  MRR@5   :0.9861
+RAG 检索策略对照
+策略              Recall@1  Recall@3  Recall@5     MRR@5  检索模式
+vector            0.9722    1.0000    1.0000    0.9861  vector=36
+bm25              0.8056    0.8889    0.8889    0.8380  bm25=36
+hybrid            0.8611    0.9444    1.0000    0.9060  hybrid=36
+hybrid_rerank     1.0000    1.0000    1.0000    1.0000  hybrid_rerank=36
 ```
 
 **讲解词**:
 
 > 评测集是固定的「问题 → 期望知识 id」,共 36 条,覆盖 12 个知识条目;
-> 脚本分别计算 Recall@1/3/5 和 MRR@5,并输出检索模式与分类别指标。
-> 这些数字是检索排序质量,不包含生成答案的评估;
+> 脚本分别计算 Recall@1/3/5 和 MRR@5,并对照四种检索策略。
+> BM25 单独召回偏弱,直接与向量 RRF 融合会被拖累;
+> 加上本地 CrossEncoder 重排后,36 条全部排到第 1 位。
+> 这组对照说明重排是必要的,不是“多此一举”。
 > 完整实测结果记录在 [RAG_EVAL.md](RAG_EVAL.md)。
 
 ---
@@ -412,7 +453,8 @@ docker exec -it cs-redis redis-cli DEL "rate:chat:sw:$SESSION_ID"
 | --- | --- | --- |
 | 聊天 | http://localhost:5173/ | 多轮对话、引用标签、售后确认卡片、快捷回复、情感提示 |
 | 数据看板 | http://localhost:5173/dashboard | 会话/消息/AI 解决率/转人工率、意图与情感分布 |
-| 知识库 | http://localhost:5173/knowledge | 增删改查、语义检索、向量索引状态 |
+| 知识库 | http://localhost:5173/knowledge | 增删改查、语义检索、知识飞轮待审队列 |
+| RAG 评测 | http://localhost:5173/rag-eval | 四策略 Recall/MRR、无答案拒答率 |
 | 会话记录 | http://localhost:5173/sessions | 列表 + 完整对话回放(含引用与审批状态) |
 
 也可以直接用接口:
@@ -429,6 +471,208 @@ curl -s "http://127.0.0.1:8000/api/v1/analytics/sessions?page=1&page_size=5"
 
 ---
 
+## 8.1 场景 H:知识飞轮 + 指代消解
+
+### 指代消解
+
+先查订单,再用短追问:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/v1/chat/send \
+  -H "Content-Type: application/json" \
+  -d "{\"session_id\":\"$SESSION_ID\",\"content\":\"查订单 ORDER20260315001\"}"
+
+curl -s -X POST http://127.0.0.1:8000/api/v1/chat/send \
+  -H "Content-Type: application/json" \
+  -d "{\"session_id\":\"$SESSION_ID\",\"content\":\"那物流呢\"}"
+```
+
+**讲解词**:
+
+> 第二句没有订单号,指代消解会结合最近对话补全成完整问法;
+> mock 模式用规则补订单号,真实 LLM 模式会改写语义。
+> 「谢谢」这类纯社交短语会跳过消解,不会被误补成订单查询。
+
+### 知识飞轮
+
+低置信度问题会进入 `low_confidence_questions`。抽取候选:
+
+```bash
+cd backend
+./venv/Scripts/python.exe scripts/mine_knowledge.py
+```
+
+或直接调接口:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/v1/review/mine
+
+curl -s http://127.0.0.1:8000/api/v1/review/queue
+```
+
+拿到 `id` 后人工采纳或弃用:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/v1/review/<id>/approve
+curl -s -X POST http://127.0.0.1:8000/api/v1/review/<id>/discard
+```
+
+**讲解词**:
+
+> 抽取结果只进 `qa_extraction_staging`,不会自动写知识库;
+> 因为模型从聊天里归纳的答案可能带具体订单/地址,也可能只是兜底话术。
+> 人工采纳后才写入 `knowledge` 并向量化,弃用只改状态,保留审计。
+> 前端「知识库 → 知识飞轮 · 待审队列」可以直接操作。
+
+---
+
+## 8.2 场景 I:文档知识 + 机械校验 + 用户反馈
+
+### 文档切块
+
+```bash
+cd backend
+./venv/Scripts/python.exe scripts/import_documents.py \
+  --file ../knowledge_base/after_sales_manual.md \
+  --title 售后处理手册
+```
+
+然后用文档里的问题提问:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/v1/chat/send \
+  -H "Content-Type: application/json" \
+  -d "{\"session_id\":\"$SESSION_ID\",\"content\":\"质量问题怎么退换\"}"
+```
+
+预期 citations 中出现 `售后处理手册 > 退货与退款 > 质量问题退换`,
+引用可以定位到章节片段。
+
+### 机械校验
+
+回答里的订单号/金额/日期必须来自本轮证据;不一致时重写一次,仍不一致则拒答并落池。
+可以在 `low_confidence_questions` 里看到 `source=answer_guard` 的记录。
+
+### 用户反馈
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/v1/feedback \
+  -H "Content-Type: application/json" \
+  -d "{\"session_id\":\"$SESSION_ID\",\"question\":\"质量问题怎么退换\",\"rating\":\"down\",\"comment\":\"没解决\"}"
+```
+
+👎 会进入低置信度池;👍 只记日志。前端每条机器人消息下方有「有帮助 / 没帮助」。
+
+### 评测看板
+
+浏览器打开 http://localhost:5173/rag-eval,查看四策略 Recall/MRR 与拒答率;
+页面下方「后台作业」可以一键重跑检索评测、拒答评测、挖知识、导入手册,并回显日志。
+
+## 8.3 场景 J:MCP 工具服务 + Langfuse 观测
+
+### MCP 工具服务
+
+```bash
+# 终端 1:知识/商品 MCP Server(8001)
+cd backend
+./venv/Scripts/python.exe -m app.mcp knowledge
+curl http://127.0.0.1:8001/health
+
+# 终端 2:订单/售后 MCP Server(8002)
+./venv/Scripts/python.exe -m app.mcp aftersales
+curl http://127.0.0.1:8002/health
+
+# 终端 3:在 backend/.env 设置 MCP_ENABLED=true 与两个 URL 后重启后端
+```
+
+发送一条订单查询,回复的 `tool_calls` / `run_steps` 中应出现
+`"transport": "mcp"`。停掉 MCP Server 再发一次,只读工具会回退为
+`"transport": "local_fallback"`,业务结果不变;写/申请/转人工则返回
+`MCP_RESULT_UNKNOWN`,不会重复执行。
+
+MCP 工具清单默认缓存 60 秒:在 Server 侧新增工具后,等缓存过期即会被后端
+发现,无需重启客服系统。首次检索若遇到 MCP Server 加载 Embedding/Reranker,
+超时上限由 `MCP_TIMEOUT`(默认 45 秒)控制。
+
+### Langfuse 观测
+
+```bash
+# 可选:本地自托管 Langfuse(界面 http://localhost:3000)
+docker compose -f docker/docker-compose.langfuse.yml up -d
+
+cd backend
+# backend/.env(与 compose headless 初始化的 key 一致)
+LANGFUSE_PUBLIC_KEY=pk-lf-after-sales-local
+LANGFUSE_SECRET_KEY=sk-lf-after-sales-local
+LANGFUSE_BASE_URL=http://127.0.0.1:3000
+# 或使用 Langfuse Cloud 的 key 与地址
+```
+
+重启后端后发一条聊天 / RAG / 订单请求,在 Langfuse 中可看到:
+
+- trace 名称 `after_sales_chat` / `after_sales_stream_chat` 与请求输入;
+- `session_id`、`user_id`、tags 与请求耗时;
+- LangGraph 模型节点、工具节点的 span(多步路径);
+- LLM generation 的模型、token、输入输出与延迟(需配置真实 `LLM_API_KEY`;
+  mock 模式下至少能看到根 span)。
+
+未配置三项时所有观测调用 no-op,日志不会出现 Langfuse 初始化信息,
+聊天与审批链路不受影响。
+
+---
+
+## 8.4 场景 K:认证 / 中断恢复 / 保留期
+
+### 认证与 RBAC
+
+```bash
+# backend/.env: AUTH_ENABLED=true, JWT_SECRET_KEY 至少 32 字节
+TOKEN=$(curl -s -X POST http://127.0.0.1:8000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"demo_admin","password":"admin123"}' | python -c "import sys,json;print(json.load(sys.stdin)['token'])")
+
+curl -s http://127.0.0.1:8000/api/v1/knowledge/list \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+不登录访问管理接口返回 401;顾客 token 访问 admin 接口返回 403。
+
+### 订单选择 interrupt / resume
+
+```bash
+# 发一条没有订单号的取消请求
+curl -s -X POST http://127.0.0.1:8000/api/v1/chat/send \
+  -H "Content-Type: application/json" \
+  -d '{"session_id":"'$SESSION_ID'","content":"帮我取消订单"}'
+# 返回 interrupt.orders + thread_id
+
+curl -s -X POST http://127.0.0.1:8000/api/v1/chat/resume \
+  -H "Content-Type: application/json" \
+  -d '{"session_id":"'$SESSION_ID'","thread_id":"...","resume":{"type":"select_order","order_no":"ORDER20260401001"}}'
+```
+
+resume 后只生成一次售后申请;真正执行仍走核验 + 审批接口。
+
+工单创建同样先暂停,确认后才执行:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/v1/chat/resume \
+  -H "Content-Type: application/json" \
+  -d '{"session_id":"'$SESSION_ID'","thread_id":"...","resume":{"type":"confirm_ticket","confirmed":true}}'
+```
+
+### 保留期试算
+
+```bash
+cd backend
+./venv/Scripts/python.exe scripts/retention_cleanup.py --dry-run
+```
+
+默认 `RETENTION_ENABLED=false`,不会删除任何数据;打开后按
+`RETENTION_DAYS_*` 分批清理。
+
+---
+
 ## 9. 5 分钟演示流程
 
 | 时间 | 动作 | 一句话讲解 |
@@ -436,14 +680,15 @@ curl -s "http://127.0.0.1:8000/api/v1/analytics/sessions?page=1&page_size=5"
 | 0:00 | 打开聊天页 | 电商售后 + RAG + 只读工具 + 售后申请 + LangGraph 多步 Agent |
 | 0:30 | 场景 A:查订单 | `agent_mode=multi_step`,`tool_calls` 是证据 |
 | 1:10 | 场景 B:查订单后取消 | 模型只提申请;核验后确认才执行,幂等 |
-| 1:50 | 场景 C:RAG 引用 | 回答下方展示知识来源 |
-| 2:20 | 场景 D:评测脚本 | Recall@1/3/5 可复现 |
+| 1:50 | 场景 C:RAG 2.0 + SSE | 混合检索 + 重排 + 引用 + 证据闸 |
+| 2:20 | 场景 D:四策略评测 | Recall@1/3/5 可复现,重排到 1.0 |
 | 2:50 | 场景 E:投诉 | 负向情感、安抚、转人工 |
-| 3:20 | 看板/知识库/会话回放 | 数据闭环 + 引用留存 |
+| 3:20 | 看板/知识库/知识飞轮 | 数据闭环 + 引用留存 + 待审队列 |
 | 4:00 | 场景 F:PII / 限流 | 安全工程细节 |
-| 4:30 | 收尾 | 架构取舍与扩展方向 |
+| 4:20 | 场景 J:MCP + Langfuse | 工具协议服务化 + trace 可观测 |
+| 4:40 | 收尾 | 架构取舍与扩展方向 |
 
-如果面试官时间更短,只演示 A + B + 看板,然后用一句话讲清 RAG 引用与评测。
+如果面试官时间更短,只演示 A + B + C + 知识飞轮,然后用一句话讲清评测。
 
 ---
 
@@ -452,6 +697,9 @@ curl -s "http://127.0.0.1:8000/api/v1/analytics/sessions?page=1&page_size=5"
 - 不要展示真实 `LLM_API_KEY`、`.env` 内容或带 Key 的终端历史;
 - 不要把自己的真实手机号/地址写进数据库,演示数据必须是虚构种子;
 - 复合任务需要核验订单并确认后才真实修改订单状态;重复演示前执行 `reset_demo_data.py`;
+- 首次启动会下载 bge-reranker(约 1GB),演示前先预热一次 RAG 问答;
+- 从旧 collection 升级时,先跑 `init_vector_db.py --rebuild`,否则 BM25 会降级;
+- 知识飞轮抽取需要真实 LLM;mock 模式返回 0 条,可演示队列 UI 与人工审核流程;
 - 高频压测会触发限流;需要时等待窗口滚动或删除对应 Redis key;
 - 截图/GIF 使用仓库脚本生成,确保界面与代码版本一致。
 
@@ -484,6 +732,20 @@ cd backend
 - 未核验订单时调用 approve 会返回 `require_verification`,先调用 `verify-order`;
 - 高风险申请需要 `reviewer` 客服工号,否则返回 `require_human_review`;
 - 若订单已发货,策略会拒绝取消并建议退货,这是预期行为。
+
+### RAG 总是拒答
+
+- 确认知识库有对应条目,且 collection 已按 BM25 schema 重建:
+  `python scripts/init_vector_db.py --rebuild`;
+- 查看 `/health` 的 `milvus` 是否为 true;
+- 证据置信度阈值默认 0.5,可在 `.env` 调整 `RAG_EVIDENCE_THRESHOLD`;
+- 低置信度问题会进入 `low_confidence_questions`,可在知识飞轮队列查看。
+
+### SSE 没有流式效果
+
+- 确认调用的是 `/api/v1/chat/send-stream`,不是 `/send`;
+- 如果经过 Nginx,确认没有缓冲(`X-Accel-Buffering: no` 已设置);
+- 浏览器 Network 里应看到 `text/event-stream`,事件按 `meta/delta/...` 逐步出现。
 
 ### Milvus 不健康
 

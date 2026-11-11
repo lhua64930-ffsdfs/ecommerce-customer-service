@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import ApprovalCard from './ApprovalCard'
+import { useChatStore } from '../stores/chatStore'
 import type { Message } from '../types/chat'
 import { formatTime } from '../utils/formatTime'
 
@@ -56,6 +57,7 @@ function renderContent(content: string): ReactNode[] {
 
 export default function MessageBubble({ message }: Props) {
   const isUser = message.senderType === 'user'
+  const sendFeedback = useChatStore((state) => state.sendFeedback)
 
   return (
     <article className={`message-bubble ${isUser ? 'is-user' : 'is-bot'}`}>
@@ -111,7 +113,29 @@ export default function MessageBubble({ message }: Props) {
           <ApprovalCard message={message} />
         )}
 
-        <div className="message-time">{formatTime(message.createdAt)}</div>
+        <div className="message-footer">
+          <span className="message-time">{formatTime(message.createdAt)}</span>
+          {!isUser && message.id !== 'welcome' && (
+            <span className="message-feedback" aria-label="回答反馈">
+              <button
+                type="button"
+                className={message.feedback === 'up' ? 'is-active' : ''}
+                disabled={Boolean(message.feedback)}
+                onClick={() => void sendFeedback(message.id, 'up')}
+              >
+                有帮助
+              </button>
+              <button
+                type="button"
+                className={message.feedback === 'down' ? 'is-active' : ''}
+                disabled={Boolean(message.feedback)}
+                onClick={() => void sendFeedback(message.id, 'down')}
+              >
+                没帮助
+              </button>
+            </span>
+          )}
+        </div>
       </div>
 
       {isUser && (

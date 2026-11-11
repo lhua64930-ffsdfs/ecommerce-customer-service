@@ -726,12 +726,63 @@
   }
 }
 
+.message-footer {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
 .message-time {
   padding: 0 2px;
   color: #a39b8c;
   font-family: var(--font-mono);
   font-size: 9px;
   letter-spacing: 0.04em;
+}
+
+.message-feedback {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.message-feedback button {
+  padding: 1px 5px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--rule);
+}
+
+.message-feedback button:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.message-feedback button.is-active {
+  color: var(--stamp);
+  border-color: var(--stamp);
+}
+
+.message-feedback button:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.job-log {
+  max-height: 240px;
+  padding: 10px 12px;
+  margin: 10px 0 0;
+  overflow: auto;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  background: var(--paper);
+  border: 1px solid var(--rule);
 }
 
 .message-bubble.is-user .message-time {

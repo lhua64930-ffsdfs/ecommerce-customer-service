@@ -4,6 +4,7 @@ import type {
   CreateSessionResponse,
   MessageListResponse,
   PendingApproval,
+  ResumeResponse,
   SendMessageResponse,
 } from '../types/chat'
 
@@ -14,6 +15,14 @@ export const chatApi = {
 
   sendMessage(data: { session_id: string; content: string }) {
     return http.post<SendMessageResponse>('/chat/send', data)
+  },
+
+  resume(data: {
+    session_id: string
+    thread_id: string
+    resume: Record<string, unknown>
+  }) {
+    return http.post<ResumeResponse>('/chat/resume', data)
   },
 
   getHistory(sessionId: string, page = 1, pageSize = 20) {
@@ -59,6 +68,18 @@ export const chatApi = {
   ) {
     return http.post<ApprovalActionResult>(
       `/chat/approvals/${approvalId}/reject`,
+      data,
+    )
+  },
+
+  sendFeedback(data: {
+    session_id: string
+    question: string
+    rating: 'up' | 'down'
+    comment?: string
+  }) {
+    return http.post<{ success: boolean; pooled: boolean; id?: number }>(
+      '/feedback',
       data,
     )
   },

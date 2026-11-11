@@ -1,0 +1,371 @@
+{
+  "total": 20,
+  "refused": 20,
+  "refusal_rate": 1.0,
+  "evidence_threshold": 0.5,
+  "modes": {
+    "hybrid_rerank": 20
+  },
+  "details": [
+    {
+      "question": "你们支持火星配送吗",
+      "refused": true,
+      "evidence_score": 0.5569,
+      "signals": {
+        "top1_score": 0.5124,
+        "valid_count": 3,
+        "margin": 0.0034,
+        "key_clause_hit": true
+      },
+      "self_check_refused": true,
+      "mode": "hybrid_rerank",
+      "top_questions": [
+        "会员有什么优惠",
+        "支持哪些支付方式",
+        "近期有什么优惠活动"
+      ]
+    },
+    {
+      "question": "可以用比特币付款吗",
+      "refused": true,
+      "evidence_score": 0.5616,
+      "signals": {
+        "top1_score": 0.518,
+        "valid_count": 3,
+        "margin": 0.0128,
+        "key_clause_hit": true
+      },
+      "self_check_refused": true,
+      "mode": "hybrid_rerank",
+      "top_questions": [
+        "支持哪些支付方式",
+        "会员有什么优惠",
+        "优惠券怎么使用"
+      ]
+    },
+    {
+      "question": "能给我开发票开给火星公司吗",
+      "refused": true,
+      "evidence_score": 0.6228,
+      "signals": {
+        "top1_score": 0.6044,
+        "valid_count": 3,
+        "margin": 0.1032,
+        "key_clause_hit": true
+      },
+      "self_check_refused": true,
+      "mode": "hybrid_rerank",
+      "top_questions": [
+        "可以开发票吗",
+        "近期有什么优惠活动",
+        "会员有什么优惠"
+      ]
+    },
+    {
+      "question": "你们卖量子手机吗",
+      "refused": true,
+      "evidence_score": 0.5518,
+      "signals": {
+        "top1_score": 0.5035,
+        "valid_count": 3,
+        "margin": 0.0002,
+        "key_clause_hit": true
+      },
+      "self_check_refused": true,
+      "mode": "hybrid_rerank",
+      "top_questions": [
+        "支持哪些支付方式",
+        "近期有什么优惠活动",
+        "会员有什么优惠"
+      ]
+    },
+    {
+      "question": "可以批发一百台送到海外仓吗",
+      "refused": true,
+      "evidence_score": 0.5541,
+      "signals": {
+        "top1_score": 0.5069,
+        "valid_count": 3,
+        "margin": 0.003,
+        "key_clause_hit": true
+      },
+      "self_check_refused": true,
+      "mode": "hybrid_rerank",
+      "top_questions": [
+        "配送时间是多久",
+        "近期有什么优惠活动",
+        "订单可以修改地址吗"
+      ]
+    },
+    {
+      "question": "支持货到付款吗",
+      "refused": true,
+      "evidence_score": 0.689,
+      "signals": {
+        "top1_score": 0.7009,
+        "valid_count": 3,
+        "margin": 0.1926,
+        "key_clause_hit": true
+      },
+      "self_check_refused": true,
+      "mode": "hybrid_rerank",
+      "top_questions": [
+        "支持哪些支付方式",
+        "商品是正品吗",
+        "可以开发票吗"
+      ]
+    },
+    {
+      "question": "可以以旧换新吗",
+      "refused": true,
+      "evidence_score": 0.622,
+      "signals": {
+        "top1_score": 0.6137,
+        "valid_count": 3,
+        "margin": 0.0759,
+        "key_clause_hit": true
+      },
+      "self_check_refused": true,
+      "mode": "hybrid_rerank",
+      "top_questions": [
+        "订单可以修改地址吗",
+        "商品可以退换吗",
+        "保修期是多久"
+      ]
+    },
+    {
+      "question": "跨境订单要交多少关税",
+      "refused": true,
+      "evidence_score": 0.5546,
+      "signals": {
+        "top1_score": 0.5069,
+        "valid_count": 3,
+        "margin": 0.0056,
+        "key_clause_hit": true
+      },
+      "self_check_refused": true,
+      "mode": "hybrid_rerank",
+      "top_questions": [
+        "近期有什么优惠活动",
+        "支持哪些支付方式",
+        "配送时间是多久"
+      ]
+    },
+    {
+      "question": "能预约门店自提吗",
+      "refused": true,
+      "evidence_score": 0.5564,
+      "signals": {
+        "top1_score": 0.5103,
+        "valid_count": 3,
+        "margin": 0.0063,
+        "key_clause_hit": true
+      },
+      "self_check_refused": true,
+      "mode": "hybrid_rerank",
+      "top_questions": [
+        "怎么联系人工客服",
+        "近期有什么优惠活动",
+        "会员有什么优惠"
+      ]
+    },
+    {
+      "question": "会员黑卡有什么权益",
+      "refused": true,
+      "evidence_score": 0.6924,
+      "signals": {
+        "top1_score": 0.7132,
+        "valid_count": 3,
+        "margin": 0.1788,
+        "key_clause_hit": true
+      },
+      "self_check_refused": true,
+      "mode": "hybrid_rerank",
+      "top_questions": [
+        "会员有什么优惠",
+        "近期有什么优惠活动",
+        "支持哪些支付方式"
+      ]
+    },
+    {
+      "question": "可以给我一份电子合同吗",
+      "refused": true,
+      "evidence_score": 0.5516,
+      "signals": {
+        "top1_score": 0.5024,
+        "valid_count": 3,
+        "margin": 0.002,
+        "key_clause_hit": true
+      },
+      "self_check_refused": true,
+      "mode": "hybrid_rerank",
+      "top_questions": [
+        "可以开发票吗",
+        "怎么联系人工客服",
+        "支持哪些支付方式"
+      ]
+    },
+    {
+      "question": "你们的股票什么时候分红",
+      "refused": true,
+      "evidence_score": 0.5519,
+      "signals": {
+        "top1_score": 0.503,
+        "valid_count": 3,
+        "margin": 0.0018,
+        "key_clause_hit": true
+      },
+      "self_check_refused": true,
+      "mode": "hybrid_rerank",
+      "top_questions": [
+        "近期有什么优惠活动",
+        "会员有什么优惠",
+        "优惠券怎么使用"
+      ]
+    },
+    {
+      "question": "能推荐一款卫星电话吗",
+      "refused": true,
+      "evidence_score": 0.5504,
+      "signals": {
+        "top1_score": 0.5006,
+        "valid_count": 3,
+        "margin": 0.0004,
+        "key_clause_hit": true
+      },
+      "self_check_refused": true,
+      "mode": "hybrid_rerank",
+      "top_questions": [
+        "怎么联系人工客服",
+        "近期有什么优惠活动",
+        "会员有什么优惠"
+      ]
+    },
+    {
+      "question": "可以帮我预约上门安装火星天线吗",
+      "refused": true,
+      "evidence_score": 0.5505,
+      "signals": {
+        "top1_score": 0.5008,
+        "valid_count": 3,
+        "margin": 0.0007,
+        "key_clause_hit": true
+      },
+      "self_check_refused": true,
+      "mode": "hybrid_rerank",
+      "top_questions": [
+        "怎么联系人工客服",
+        "配送时间是多久",
+        "近期有什么优惠活动"
+      ]
+    },
+    {
+      "question": "退货运费可以到付吗",
+      "refused": true,
+      "evidence_score": 0.5815,
+      "signals": {
+        "top1_score": 0.5497,
+        "valid_count": 3,
+        "margin": 0.0332,
+        "key_clause_hit": true
+      },
+      "self_check_refused": true,
+      "mode": "hybrid_rerank",
+      "top_questions": [
+        "支持哪些支付方式",
+        "退款多久到账",
+        "会员有什么优惠"
+      ]
+    },
+    {
+      "question": "能开美元发票吗",
+      "refused": true,
+      "evidence_score": 0.5967,
+      "signals": {
+        "top1_score": 0.5705,
+        "valid_count": 3,
+        "margin": 0.0571,
+        "key_clause_hit": true
+      },
+      "self_check_refused": true,
+      "mode": "hybrid_rerank",
+      "top_questions": [
+        "可以开发票吗",
+        "支持哪些支付方式",
+        "优惠券怎么使用"
+      ]
+    },
+    {
+      "question": "商品可以寄到南极吗",
+      "refused": true,
+      "evidence_score": 0.5567,
+      "signals": {
+        "top1_score": 0.5117,
+        "valid_count": 3,
+        "margin": 0.0042,
+        "key_clause_hit": true
+      },
+      "self_check_refused": true,
+      "mode": "hybrid_rerank",
+      "top_questions": [
+        "配送时间是多久",
+        "商品可以退换吗",
+        "订单可以修改地址吗"
+      ]
+    },
+    {
+      "question": "可以分期免息十二年吗",
+      "refused": true,
+      "evidence_score": 0.5638,
+      "signals": {
+        "top1_score": 0.5214,
+        "valid_count": 3,
+        "margin": 0.0154,
+        "key_clause_hit": true
+      },
+      "self_check_refused": true,
+      "mode": "hybrid_rerank",
+      "top_questions": [
+        "支持哪些支付方式",
+        "近期有什么优惠活动",
+        "会员有什么优惠"
+      ]
+    },
+    {
+      "question": "你们支持数字人民币支付吗",
+      "refused": true,
+      "evidence_score": 0.6336,
+      "signals": {
+        "top1_score": 0.6196,
+        "valid_count": 3,
+        "margin": 0.1188,
+        "key_clause_hit": true
+      },
+      "self_check_refused": true,
+      "mode": "hybrid_rerank",
+      "top_questions": [
+        "支持哪些支付方式",
+        "会员有什么优惠",
+        "近期有什么优惠活动"
+      ]
+    },
+    {
+      "question": "可以帮我联系品牌方总部吗",
+      "refused": true,
+      "evidence_score": 0.5543,
+      "signals": {
+        "top1_score": 0.5064,
+        "valid_count": 3,
+        "margin": 0.0054,
+        "key_clause_hit": true
+      },
+      "self_check_refused": true,
+      "mode": "hybrid_rerank",
+      "top_questions": [
+        "怎么联系人工客服",
+        "商品是正品吗",
+        "会员有什么优惠"
+      ]
+    }
+  ]
+}

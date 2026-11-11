@@ -36,9 +36,15 @@ class RunRecorder:
 
     async def record_steps(self, run: AgentRun, steps: list[dict[str, Any]]) -> None:
         total_latency = 0
+        total_tokens = 0
         for index, step in enumerate(steps, 1):
             latency = int(step.get("latency_ms") or 0)
             total_latency += latency
+            tokens = int(step.get("tokens") or 0)
+            total_tokens += tokens
+            output = step.get("output")
+            if tokens and isinstance(output, dict):
+                output = {**output, "tokens": tokens}
             self.db.add(
                 AgentStep(
                     run_id=run.run_id,
@@ -46,13 +52,14 @@ class RunRecorder:
                     step_type=step.get("step_type") or "tool",
                     name=str(step.get("name") or "unknown")[:100],
                     input_json=step.get("input"),
-                    output_json=step.get("output"),
+                    output_json=output,
                     success=bool(step.get("success", True)),
                     latency_ms=latency,
                 )
             )
         run.total_steps = len(steps)
         run.total_latency_ms = total_latency
+        run.total_tokens = total_tokens
         await self.db.flush()
 
     async def finish(self, run: AgentRun, status: str) -> None:

@@ -82,6 +82,80 @@ class FakeOrderTool:
         }
 
 
+class FakeOrderListTool:
+    """query_order 的测试替身:无订单号时返回多个订单,用于 interrupt 选择。"""
+
+    name = "query_order"
+    description = "查询订单信息"
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    async def execute(self, params: dict[str, Any]) -> dict[str, Any]:
+        self.calls.append(params)
+        order_no = params.get("order_no")
+        if order_no:
+            return {
+                "success": True,
+                "response": f"订单 {order_no} 状态:已支付",
+                "order": {"order_no": order_no, "status": "paid"},
+            }
+        return {
+            "success": True,
+            "response": "请选择订单",
+            "orders": [
+                {"order_no": "ORDER-A", "status": "paid"},
+                {"order_no": "ORDER-B", "status": "paid"},
+            ],
+        }
+
+    def get_schema(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "description": self.description,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "order_no": {"type": "string", "description": "订单号(可选)"}
+                },
+                "required": [],
+            },
+        }
+
+
+class FakeTicketTool:
+    """create_ticket 的测试替身:记录是否真的被执行。"""
+
+    name = "create_ticket"
+    description = "创建工单"
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    async def execute(self, params: dict[str, Any]) -> dict[str, Any]:
+        self.calls.append(params)
+        return {
+            "success": True,
+            "ticket_no": "TKT-TEST",
+            "response": "✅ 工单已创建",
+        }
+
+    def get_schema(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "description": self.description,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "type": {"type": "string"},
+                    "title": {"type": "string"},
+                    "content": {"type": "string"},
+                },
+                "required": ["type", "content"],
+            },
+        }
+
+
 class FakeKnowledgeTool:
     """search_knowledge 的测试替身:返回固定知识条目。"""
 

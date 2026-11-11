@@ -1,9 +1,10 @@
 """订单服务接口。"""
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
+from app.core.access import identity, is_staff, user_id as access_user_id
 from app.models.order import Order
 from app.utils.pii import mask_address, mask_name, mask_phone
 
@@ -31,12 +32,17 @@ def _to_dict(order: Order) -> dict:
 
 @router.get("/list", summary="订单列表")
 async def list_orders(
+    request: Request,
     user_id: int | None = None,
     status: str | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
+    if identity(request) is not None and not is_staff(request):
+        # 顾客只能看自己的订单,忽略查询参数里的 user_id
+        user_id = int(access_user_id(request) or 0)
+
     statement = select(Order)
     count_statement = select(func.count()).select_from(Order)
     if user_id is not None:
@@ -67,9 +73,16 @@ async def list_orders(
 
 
 @router.get("/{order_no}", summary="订单详情")
-async def get_order(order_no: str, db: AsyncSession = Depends(get_db)) -> dict:
+async def get_order(
+    order_no: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
     result = await db.execute(select(Order).where(Order.order_no == order_no.upper()))
     order = result.scalar_one_or_none()
     if order is None:
         raise HTTPException(status_code=404, detail="订单不存在")
+    if identity(request) is not None and not is_staff(request):
+        if str(order.user_id) != (access_user_id(request) or ""):
+            raise HTTPException(status_code=404, detail="订单不存在")
     return _to_dict(order)

@@ -27,6 +27,7 @@ let frameIndex = 0
 
 const browser = await chromium.launch({ channel: 'msedge', headless: true })
 const page = await browser.newPage({ viewport: { width: 1280, height: 860 } })
+const input = page.locator('textarea').first()
 
 const shot = async (name) => {
   const index = String(frameIndex++).padStart(2, '0')
@@ -48,7 +49,7 @@ try {
   await page.waitForTimeout(900)
   await shot('welcome')
 
-  await page.fill('textarea', '查订单 ORDER20260315001')
+  await input.fill('查订单 ORDER20260315001')
   await page.keyboard.press('Enter')
   await page.waitForTimeout(500)
   await shot('order-typing')
@@ -61,22 +62,39 @@ try {
   await scrollToBottom()
   await shot('order-result')
 
-  await page.fill('textarea', '商品可以退换吗')
+  await input.fill('商品可以退换吗')
   await page.keyboard.press('Enter')
   await page.waitForTimeout(500)
   await shot('rag-typing')
 
-  await page.waitForSelector('.citation-chip', { timeout: 60000 })
+  await page.waitForFunction(
+    () => {
+      const bubbles = [...document.querySelectorAll('.bubble-bot')]
+      const last = bubbles[bubbles.length - 1]
+      return Boolean(
+        last && last.textContent && last.textContent.includes('退换') && last.textContent.length > 20,
+      )
+    },
+    { timeout: 90000 },
+  )
   await page.waitForTimeout(900)
   await scrollToBottom()
   await shot('rag-citation')
 
-  await page.fill('textarea', '太差了我要投诉')
+  await input.fill('太差了我要投诉')
   await page.keyboard.press('Enter')
   await page.waitForTimeout(500)
   await shot('transfer-typing')
 
-  await page.waitForSelector('text=转接投诉处理专员', { timeout: 60000 })
+  await page.waitForFunction(
+    () => {
+      const bubbles = [...document.querySelectorAll('.bubble-bot')]
+      const last = bubbles[bubbles.length - 1]
+      const text = (last?.textContent || '').trim()
+      return text.includes('转接') || text.includes('人工') || text.includes('投诉处理')
+    },
+    { timeout: 90000 },
+  )
   await page.waitForTimeout(900)
   await scrollToBottom()
   await shot('transfer-result')

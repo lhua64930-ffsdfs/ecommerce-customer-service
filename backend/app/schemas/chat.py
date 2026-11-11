@@ -84,6 +84,15 @@ class PendingApproval(BaseModel):
     requires_human: bool = False
 
 
+class InterruptPayload(BaseModel):
+    """图暂停时返回给前端的交互负载。"""
+
+    type: str
+    message: str | None = None
+    orders: list[dict[str, Any]] = Field(default_factory=list)
+    preview: dict[str, Any] | None = None
+
+
 class MessageResponse(BaseModel):
     id: int
     session_id: str
@@ -95,6 +104,7 @@ class MessageResponse(BaseModel):
     sentiment_score: float | None = None
     citations: list[Citation] = Field(default_factory=list)
     pending_approval: PendingApproval | None = None
+    evidence_status: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -115,11 +125,38 @@ class SendMessageResponse(BaseModel):
     pending_approval: PendingApproval | None = Field(
         None, description="待确认/待审批的售后申请"
     )
+    evidence_status: str | None = Field(
+        None, description="RAG 证据状态:sufficient / insufficient"
+    )
     run_id: str | None = Field(None, description="本次 Agent 运行ID")
     agent_mode: AgentMode = Field(
         AgentMode.SINGLE_STEP,
         description="本次处理路径:multi_step / single_step / single_step_fallback",
     )
+    thread_id: str | None = Field(
+        None, description="checkpoint thread;resume 时回传"
+    )
+    interrupt: InterruptPayload | None = Field(
+        None, description="图暂停时的订单选择等交互负载"
+    )
+
+
+class ResumeRequest(BaseModel):
+    session_id: str
+    thread_id: str
+    resume: dict[str, Any] = Field(default_factory=dict)
+
+
+class ResumeResponse(BaseModel):
+    response: str
+    thread_id: str | None = None
+    interrupt: InterruptPayload | None = None
+    pending_approval: PendingApproval | None = None
+    tool_calls: list[dict[str, Any]] = Field(default_factory=list)
+    citations: list[Citation] = Field(default_factory=list)
+    run_id: str | None = None
+    message_id: int | None = None
+    agent_mode: AgentMode = AgentMode.MULTI_STEP
 
 
 class SessionInfo(BaseModel):

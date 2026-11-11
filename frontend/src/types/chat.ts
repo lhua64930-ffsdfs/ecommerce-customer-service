@@ -48,6 +48,22 @@ export interface ApprovalActionResult {
   } | null
 }
 
+export interface OrderOption {
+  order_no: string
+  status?: string
+  product_name?: string | null
+  total_amount?: number
+  pay_amount?: number | null
+  [key: string]: unknown
+}
+
+export interface InterruptPayload {
+  type: string
+  message?: string
+  orders: OrderOption[]
+  preview?: Record<string, unknown>
+}
+
 export interface Message {
   id: string
   senderType: SenderType
@@ -58,6 +74,9 @@ export interface Message {
   sentimentScore?: number
   citations?: Citation[]
   pendingApproval?: PendingApproval
+  interrupt?: InterruptPayload
+  threadId?: string
+  feedback?: 'up' | 'down'
 }
 
 export interface SessionInfo {
@@ -78,6 +97,8 @@ export interface CreateSessionResponse {
 export interface ToolCall {
   tool: string
   success: boolean
+  /** MCP 开启时标记实际执行路径 */
+  transport?: 'mcp' | 'local_fallback'
 }
 
 export interface SendMessageResponse {
@@ -93,6 +114,20 @@ export interface SendMessageResponse {
   pending_approval: PendingApproval | null
   run_id: string | null
   agent_mode: 'multi_step' | 'single_step' | 'single_step_fallback'
+  thread_id?: string | null
+  interrupt?: InterruptPayload | null
+}
+
+export interface ResumeResponse {
+  response: string
+  thread_id: string | null
+  interrupt: InterruptPayload | null
+  pending_approval: PendingApproval | null
+  tool_calls: ToolCall[]
+  citations: Citation[]
+  run_id: string | null
+  message_id: number | null
+  agent_mode: string
 }
 
 export interface HistoryMessage {

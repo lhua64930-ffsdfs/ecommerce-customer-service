@@ -17,7 +17,10 @@ class ToolContext:
     user_id: int | None
     session_id: str
     user_message: str
+    # 只有确认闸在 resume 后才置 True;写工具执行前检查
+    write_confirmed: bool = False
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    tool_records: list[dict[str, Any]] = field(default_factory=list)
     citations: list[dict[str, Any]] = field(default_factory=list)
     pending_approval: dict[str, Any] | None = None
     steps: list[dict[str, Any]] = field(default_factory=list)
@@ -41,10 +44,13 @@ class ToolContext:
     ) -> None:
         """记录工具调用、执行步骤、引用与待审批申请。"""
         success = bool(result.get("success"))
-        self.tool_calls.append({"tool": tool_name, "success": success})
+        call_record: dict[str, Any] = {"tool": tool_name, "success": success}
+        if result.get("transport"):
+            call_record["transport"] = result["transport"]
+        self.tool_calls.append(call_record)
 
         output: dict[str, Any] = {"success": success}
-        for key in ("decision", "error_code", "executed"):
+        for key in ("decision", "error_code", "executed", "transport"):
             if result.get(key) is not None:
                 output[key] = result[key]
         response_text = str(result.get("response") or "")
@@ -61,6 +67,14 @@ class ToolContext:
             }
         )
 
+        record: dict[str, Any] = {"tool": tool_name, "success": success}
+        for key in ("decision", "error_code", "executed", "transport"):
+            if result.get(key) is not None:
+                record[key] = result[key]
+        if result.get("proposal"):
+            record["proposal"] = result["proposal"]
+        self.tool_records.append(record)
+
         if tool_name == "propose_after_sales_action" and result.get("proposal"):
             self.pending_approval = result["proposal"]
 
@@ -68,7 +82,11 @@ class ToolContext:
             return
 
         known_ids = {item["id"] for item in self.citations}
+        new_citations: list[dict[str, Any]] = []
         for citation in build_citations(result.get("results") or []):
             if citation["id"] not in known_ids:
                 self.citations.append(citation)
                 known_ids.add(citation["id"])
+                new_citations.append(citation)
+        if new_citations:
+            record["citations"] = new_citations

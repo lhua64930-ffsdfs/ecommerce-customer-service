@@ -1,0 +1,12 @@
+# 开发/测试/演示依赖;运行时镜像只安装 requirements.txt
+-r requirements.txt
+
+# ============ 测试 ============
+pytest>=8.3
+pytest-asyncio>=0.25
+# 测试用 ASGI/HTTP 客户端
+httpx>=0.28
+
+# ============ 演示素材 ============
+# 根目录 scripts/make_demo_gif.py 合成 GIF
+Pillow>=10

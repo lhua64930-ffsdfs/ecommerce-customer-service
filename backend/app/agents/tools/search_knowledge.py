@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services.rag_service import RAGService
+from app.services.retrieval import RetrievalService
 from app.utils.logger import logger
 
 
@@ -22,7 +22,13 @@ class SearchKnowledgeTool:
         filters = {"category": category} if category else None
 
         try:
-            results = await RAGService().search(query, top_k=top_k, filters=filters)
+            results = await RetrievalService().search(
+                query,
+                top_k=top_k,
+                filters=filters,
+                expand=False,
+                split=False,
+            )
         except Exception as exc:  # noqa: BLE001
             logger.error("知识库检索失败: {}", exc)
             return {
