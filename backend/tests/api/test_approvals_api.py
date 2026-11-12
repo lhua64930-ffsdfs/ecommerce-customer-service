@@ -160,10 +160,10 @@ async def test_approval_cannot_be_used_from_another_session(
     assert forbidden.json()["detail"]["code"] == "approval_not_found"
 
 
-async def test_mock_fallback_low_value_cancel_auto_executes_after_verification(
+async def test_mock_offline_low_value_cancel_auto_executes_after_verification(
     client: httpx.AsyncClient, demo_orders: dict[str, str]
 ) -> None:
-    """无 Key 时走单步 fallback,低风险取消核验后由策略自动执行。"""
+    """无 Key 时走单步离线模式,低风险取消核验后由策略自动执行。"""
     order_no = "ORDER20260320001"
     session_id = await _create_session(client)
 
@@ -172,7 +172,7 @@ async def test_mock_fallback_low_value_cancel_auto_executes_after_verification(
         json={"session_id": session_id, "content": f"取消订单 {order_no}"},
     )
     data = response.json()
-    assert data["agent_mode"] == "single_step_fallback"
+    assert data["agent_mode"] == "single_step"
     pending = data["pending_approval"]
     assert pending is not None
     assert pending["requires_verification"] is True

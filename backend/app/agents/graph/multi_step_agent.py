@@ -1,4 +1,4 @@
-"""LangGraph 多步 Agent:模型节点 + 工具节点 + 条件边,最多 5 步。
+"""LangGraph 多步 Agent:模型节点 + 工具节点 + 条件边,最多 6 步。
 
 设计要点:
 - 图与 ChatModel 从外部注入,测试可传脚本化 Fake ChatModel;
@@ -6,12 +6,11 @@
   时暂停,暂停前只做只读查询,resume 后由工具节点执行一次申请;
 - 审批单仍是执行真源:interrupt 只解决 slot-filling,不执行写操作;
 - 失败、超过步数、空回复或没有产生工具结果时抛出 ``MultiStepError``,
-  由 ``CustomerServiceAgent`` 回退到单步 Agent(Agent Fallback)。
+  由调用方强停并返回兜底话术(MewHelp 风格),不再回退单步 Agent。
 """
 from __future__ import annotations
 
 import json
-import operator
 import time
 from dataclasses import dataclass
 from typing import Annotated, Any, TypedDict
@@ -37,7 +36,7 @@ from app.agents.tools.query_order import QueryOrderTool
 from app.core.observability import langchain_config
 from app.utils.logger import logger
 
-DEFAULT_MAX_STEPS = 5
+DEFAULT_MAX_STEPS = 6
 
 
 class MultiStepError(RuntimeError):
@@ -64,15 +63,17 @@ class AgentState(TypedDict, total=False):
     """图状态:消息与本轮审计/工具记录。"""
 
     messages: Annotated[list[BaseMessage], add_messages]
-    steps: Annotated[int, operator.add]
+    # 会话级 checkpoint 下,这些字段必须每轮覆盖而不是累加;
+    # 节点自己负责在单轮内累加。
+    steps: int
     session_id: str
     user_id: int | None
     user_message: str
     selected_order_no: str
     write_denied: bool
     graph_version: str
-    tool_records: Annotated[list[dict[str, Any]], operator.add]
-    run_steps: Annotated[list[dict[str, Any]], operator.add]
+    tool_records: list[dict[str, Any]]
+    run_steps: list[dict[str, Any]]
 
 
 @dataclass(frozen=True)
@@ -142,10 +143,22 @@ class MultiStepAgent:
         if with_checkpoint:
             config["configurable"] = {"thread_id": thread_id}
 
+        # 会话级 checkpoint:已有历史时只追加本轮用户消息,
+        # 避免把 history 再塞一遍;步骤/工具记录每轮重置。
+        messages: list[BaseMessage]
+        if with_checkpoint:
+            snapshot = await graph.aget_state(config)
+            has_state = bool((getattr(snapshot, "values", None) or {}).get("messages"))
+            messages = (
+                [HumanMessage(content=user_message)]
+                if has_state
+                else self._initial_messages(user_message, history or [], skill)
+            )
+        else:
+            messages = self._initial_messages(user_message, history or [], skill)
+
         initial: dict[str, Any] = {
-            "messages": self._initial_messages(
-                user_message, history or [], skill
-            ),
+            "messages": messages,
             "steps": 0,
             "session_id": session_id,
             "user_id": user_id,
@@ -173,8 +186,7 @@ class MultiStepAgent:
             interrupted=bool(interrupt_payload),
             interrupt_payload=interrupt_payload,
         )
-        if not result.interrupted:
-            await self._cleanup_thread(thread_id)
+        # 会话级 checkpoint:成功后保留状态,供下一轮续接;不做 per-turn 删除。
         return result
 
     async def resume(
@@ -209,6 +221,8 @@ class MultiStepAgent:
             raise MultiStepResumeError("找不到该 thread 的 checkpoint")
         if values.get("graph_version") != GRAPH_VERSION:
             raise MultiStepResumeError("图版本已变化,请重新发送消息")
+        if not getattr(snapshot, "next", None):
+            raise MultiStepResumeError("当前 thread 没有待恢复的 interrupt")
 
         context.user_id = values.get("user_id")
         context.session_id = values.get("session_id", "")
@@ -238,8 +252,6 @@ class MultiStepAgent:
             interrupted=bool(interrupt_payload),
             interrupt_payload=interrupt_payload,
         )
-        if not result.interrupted:
-            await self._cleanup_thread(thread_id)
         return result
 
     # ---------------- 结果组装 ----------------
@@ -303,17 +315,6 @@ class MultiStepAgent:
             thread_id=thread_id,
         )
 
-    async def _cleanup_thread(self, thread_id: str | None) -> None:
-        if not thread_id or self.checkpointer is None:
-            return
-        delete = getattr(self.checkpointer, "adelete_thread", None)
-        if delete is None:
-            return
-        try:
-            await delete(thread_id)
-        except Exception as exc:  # noqa: BLE001 - 清理失败不影响回复
-            logger.warning("清理 checkpoint 失败 [{}]: {}", thread_id, exc)
-
     # ---------------- 图构建 ----------------
     def _build_graph(
         self, context: ToolContext, *, with_checkpoint: bool = False
@@ -363,7 +364,11 @@ class MultiStepAgent:
                 "latency_ms": int((time.perf_counter() - started) * 1000),
             }
             context.steps.append(step)
-            return {"messages": [response], "steps": 1, "run_steps": [step]}
+            return {
+                "messages": [response],
+                "steps": state.get("steps", 0) + 1,
+                "run_steps": [*(state.get("run_steps") or []), step],
+            }
 
         async def call_tools(state: AgentState) -> dict[str, Any]:
             last = state["messages"][-1]
@@ -444,8 +449,14 @@ class MultiStepAgent:
                 )
             return {
                 "messages": observations,
-                "tool_records": context.tool_records[record_start:],
-                "run_steps": context.steps[step_start:],
+                "tool_records": [
+                    *(state.get("tool_records") or []),
+                    *context.tool_records[record_start:],
+                ],
+                "run_steps": [
+                    *(state.get("run_steps") or []),
+                    *context.steps[step_start:],
+                ],
             }
 
         async def pre_tool_gate(state: AgentState) -> dict[str, Any]:

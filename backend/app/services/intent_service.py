@@ -118,14 +118,19 @@ class IntentService:
         self._initialized = True
         self.llm_service = LLMService()
 
-    async def recognize(self, text: str, user_id: int | None = None) -> IntentResult:
-        """识别用户意图。"""
+    async def recognize(
+        self,
+        text: str,
+        user_id: int | None = None,
+        context: str = "",
+    ) -> IntentResult:
+        """识别用户意图;context 为摘要/较早历史,用于跨滑窗指代。"""
         text = (text or "").strip()
         if not text:
             return self._fallback_result()
 
         keyword_result = self._keyword_match(text)
-        llm_result = await self._llm_understand(text)
+        llm_result = await self._llm_understand(text, context=context)
         final_result = self._fuse(keyword_result, llm_result)
 
         entities = self._extract_entities(text)
@@ -166,7 +171,9 @@ class IntentService:
         return best
 
     # ---------------- LLM 理解 ----------------
-    async def _llm_understand(self, text: str) -> IntentResult | None:
+    async def _llm_understand(
+        self, text: str, context: str = ""
+    ) -> IntentResult | None:
         intent_lines = "\n".join(
             f"- {code}: {config['name']}"
             for code, config in self.INTENT_CONFIGS.items()
@@ -174,6 +181,7 @@ class IntentService:
         )
         prompt = (
             "你是电商客服系统的意图分类器。请分析用户输入,只返回 JSON。\n\n"
+            f"早前上下文摘要(可能为空):\n{context or '(无)'}\n\n"
             f"用户输入:{text}\n\n"
             f"可选意图:\n{intent_lines}\n- fallback: 其他\n\n"
             '返回格式:{"intent_code": "上面某个意图代码", "confidence": 0.0到1.0之间}'

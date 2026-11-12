@@ -14,9 +14,9 @@ FastAPI ── Chat API
         ├─ 情感分析 ──────────────► SentimentService
         ├─ 意图识别 ──────────────► IntentService(规则 + LLM)
         ├─ 路由
-        │    ├─ 订单查询 / 取消 / 退款 → LangGraph 多步 Agent(只读工具 + 申请工具,≤5 步)
+        │    ├─ 订单查询 / 取消 / 退款 → LangGraph 多步 Agent(只读工具 + 申请工具,≤6 步)
         │    │              ├─ 复合任务:query_order → 判断状态 → propose_after_sales_action
-        │    │              └─ 失败 / 超步数 / 空结果 → 单步 fallback
+        │    │              └─ 失败 / 超步数 / 空结果 → 强停兜底话术
         │    ├─ transfer → TransferHumanTool → Redis 队列 + sessions.status
         │    ├─ tool     → QueryOrder / QueryProduct / ProposeAction / CreateTicket → MySQL
         │    ├─ rag      → RetrievalService(BM25 + 向量 + RRF + bge-reranker)
@@ -59,9 +59,10 @@ FastAPI ── Chat API
    - 意图识别 → 关键词与 LLM 融合,抽取实体;
    - `order_query` / `cancel_order` / `refund_request` 优先交给 LangGraph 多步 Agent:
      模型节点决定调用哪个工具,工具节点执行只读工具或生成售后申请并回传 Observation,
-     条件边决定继续或结束,最多 5 步;复合任务由模型自主完成
+     条件边决定继续或结束,最多 6 步;复合任务由模型自主完成
      「query_order → 判断状态 → propose_after_sales_action」;
-   - 图不可用、执行失败、超步数、空回复或没有工具结果时,回退到既有单步 Agent(Agent Fallback);
+   - 图不可用、执行失败、超步数、空回复或没有工具结果时,强停并返回兜底话术,
+     不再回退单步 Agent;
    - 其余意图仍按 `handler_type` 路由:转人工 / 工具 / RAG / 纯 LLM;
    - 工具执行统一走注册表:权限 → JSON Schema → 超时/只读重试 → 审计;
    - RAG 路径:混合检索 → 证据闸 → 自检 → 生成;
@@ -207,8 +208,10 @@ POST /chat/approvals/{id}/approve
 - 知识飞轮:低置信度问题 → `scripts/mine_knowledge.py` 抽取候选 →
   `qa_extraction_staging` → 人工采纳才写入 `knowledge` 并向量化。
 - 文档知识:`scripts/import_documents.py` 把 Markdown 按标题分层、中文递归切块、
-  句级 overlap 后写入 `knowledge_documents/chunks`;片段以 `10_000_000 + chunk.id`
-  写入同一 Milvus collection,引用可定位到 `section_path`。
+  句级 overlap 后写入 `knowledge_documents/chunks`;大表格按行切分并重复表头;
+  片段以 `10_000_000 + chunk.id` 写入同一 Milvus collection,引用可定位到 `section_path`。
+- 多子句查询按子句分别检索后**轮转合并**,同一小节重复的候选挪到尾部,
+  避免一个意图占满前排;该合并只在精排前生效。
 - 回答机械校验:订单号/金额/日期必须逐字来自证据;不一致时重写一次,
   仍不一致则拒答并落低置信度池(`source=answer_guard`)。
 - 用户反馈:👍 只记日志,👎 写入低置信度池(`source=user_feedback`),进入飞轮。
@@ -231,7 +234,7 @@ POST /chat/approvals/{id}/approve
 | 统一数据库事务 | 知识条目与向量主键同源,避免双写不一致 |
 | 工具接收 `AsyncSession` | 同一次请求复用一个连接,避免连接爆炸 |
 | 失败降级 | LLM / RAG / Redis 任一故障不阻断主流程 |
-| 多步 Agent 主路径 + 单步 fallback | 展示 LangGraph 多步工具调用,同时保留稳定可演示的兜底路径 |
+| 多步 Agent 主路径 + 强停兜底 | 展示 LangGraph 多步工具调用,失败时给出明确兜底话术;无模型时走单步离线模式 |
 | 写操作幂等 | 审批状态机 + 执行前状态重验,重复确认不会重复执行 |
 | 模型提申请、系统执行 | 模型没有退款/取消写权限,避免过度自治与误操作 |
 | Policy-as-code | 金额/状态/风险规则可配置、可审计、可版本化 |
@@ -246,7 +249,7 @@ POST /chat/approvals/{id}/approve
 | MCP 工具服务化 | 工具以标准协议独立部署,便于跨进程/跨语言复用;上下文由后端注入,传输失败回退进程内工具保证可用性 |
 | Langfuse 观测 | 模型、工具、token 与延迟可追溯;三项配置缺失时完全 no-op,不增加运行负担 |
 | 认证默认关闭 | 本地演示零门槛;生产 AUTH_ENABLED=true 并强制 ≥32 字节密钥 |
-| 按轮 checkpointer | 不复制跨轮状态,避免标量泄漏;interrupt 只在缺订单号时暂停 |
+| 会话级 checkpointer | 同一会话跨轮续接;每轮重置 steps/tool_records,避免标量累加 |
 | Redis 可选 | 单机不依赖 Redis;多副本/共享限流时再启用 |
 | 副作用工具不回退 | 超时可能已执行,回退会重复建单/排队;只允许只读工具回退 |
 
@@ -334,7 +337,7 @@ ToolContext(user_id, session_id, user_message)
 ## 11. Checkpointer 与 interrupt/resume
 
 ```text
-thread_id = f"{session_id}:{user_message_id}"
+thread_id = session_id  # 会话级 checkpoint,跨轮续接
 多步图 ── 模型节点 ── gate ── interrupt(订单选择 / 工单确认) ── 工具节点
                      │                                    ├─ propose_after_sales_action
                      │                                    └─ create_ticket(确认后)
@@ -344,7 +347,8 @@ thread_id = f"{session_id}:{user_message_id}"
 - SQLite checkpointer 默认开启,Postgres 可选;初始化失败降级 `InMemorySaver`;
 - 订单选择 gate 只做只读查询;工单 gate 在 `write_confirmed` 前不允许写;
 - 售后申请仍走审批单 + 策略引擎 + 订单核验;工单确认只解决建单 slot-filling;
-- 每轮结束清理 checkpoint,避免 SQLite 无限增长。
+- 同一会话共用一个 thread;每轮初始化时重置 `steps/tool_records/run_steps`,
+  消息由 `add_messages` 累积,避免跨轮步骤累加。
 
 ### 11.1 确定性路由图
 
@@ -356,12 +360,12 @@ preprocess → memory_context → coref → intent → route
   ├─ script(问候/闲聊)
   ├─ transfer(转人工)
   ├─ retrieve_knowledge → evidence_gate → generate_answer
-  ├─ main_agent(单步工具 / 多步 ReAct 子图)
+  ├─ main_agent(单步工具 / ReAct 工具循环)
   └─ llm(普通生成)
 → finalize(情感前缀 / 快捷回复 / 结果组装)
 ```
 
-共 12 个节点;图失败自动回退旧单步链路;SSE 工具/转人工路径复用同一结果,
+共 15 个节点(含 ReAct 工具节点与 gate);图整体异常时保留旧链路兼容兜底(不参与多步失败语义);SSE 工具/转人工路径复用同一结果,
 RAG 流式仍走原逐 token 路径。
 
 ## 12. 韧性与运维
@@ -377,5 +381,5 @@ RAG 流式仍走原逐 token 路径。
 - **语义历史**:摘要边界切窗 + 可选 embedding 检索补捞,失败静默降级。
 - **观测**:`/api/v1/observability/*` 提供运行概览、轨迹回放与按天 Token 成本;
   `agent_runs.total_tokens` 由模型 usage/近似值汇总。
-- **Checkpoint 清理**:每轮正常结束删除 thread;`checkpoint-cleanup` 作业按
-  `CHECKPOINT_TTL_HOURS` 清理遗留的未完成 thread。
+- **Checkpoint 清理**:thread 按会话保留,`checkpoint-cleanup` 作业按
+  `CHECKPOINT_TTL_HOURS` 清理超过 TTL 的会话 thread。

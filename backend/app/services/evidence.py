@@ -107,6 +107,7 @@ def evidence_snapshot(hits: list[dict[str, Any]], top_n: int = 3) -> list[dict[s
             "id": item.get("id"),
             "question": item.get("question", ""),
             "answer": item.get("answer", "")[:500],
+            "section_path": item.get("section_path", ""),
             "score": item.get("score", 0.0),
             "rerank_score": item.get("rerank_score"),
         }

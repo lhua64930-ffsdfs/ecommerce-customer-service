@@ -5,7 +5,7 @@
 MCP 工具服务化、Langfuse 全链路观测、转人工、数据看板与知识库运营。
 
 > 演示入口:[可复现演示脚本](docs/DEMO.md) · [架构设计](docs/ARCHITECTURE.md) ·
-> [ADR-0001:LangGraph 主路径 + Agent Fallback](docs/adr/0001-langgraph-primary-agent.md)
+> [ADR-0001:LangGraph 主路径 + 强停兜底](docs/adr/0001-langgraph-primary-agent.md)
 
 ## 功能
 
@@ -19,8 +19,8 @@ MCP 工具服务化、Langfuse 全链路观测、转人工、数据看板与知�
 - **证据闸**:Top1/有效证据数/分差/关键条款四信号置信度 + 生成前自检;
   证据不足拒答并落低置信度池
 - **知识飞轮**:低置信度问题 → LLM 抽取候选 → 人工复核 → 采纳补库
-- **文档知识**:Markdown 按标题分层 + 中文递归切块 + 句级 overlap,
-  引用可定位到章节片段
+- **文档知识**:Markdown 按标题分层 + 中文递归切块 + 句级 overlap;
+  大表格按行切分并重复表头,引用可定位到章节片段
 - **回答校验**:订单号 / 金额 / 日期必须逐字来自证据,不一致则重写或拒答
 - **用户反馈**:👍 只记日志,👎 进入低置信度池,形成飞轮入口
 - **流式对话**:SSE 事件流(meta / delta / tool / citations / actions / done)
@@ -49,8 +49,8 @@ MCP 工具服务化、Langfuse 全链路观测、转人工、数据看板与知�
   运行概览、轨迹回放、按天 Token 成本只读 API
 - **Agent 工具集**:知识检索、订单查询、商品查询、售后申请、转人工、创建工单;
   统一执行引擎做 Schema 校验、权限门、超时/重试与审计
-- **多步 Agent**:LangGraph 模型节点 + 工具节点 + 条件边,单请求最多 5 步;
-  失败自动回退单步 Agent,响应通过 `agent_mode` 标记实际路径
+- **多步 Agent**:LangGraph 模型节点 + 工具节点 + 条件边,单请求最多 6 步;
+  失败、超步或空结果时强停并返回兜底话术,响应通过 `agent_mode` 标记实际路径
 - **复合任务**:一次请求内完成「查订单 → 判断状态 → 提交取消/退货申请」;
   模型只提申请,用户确认或人工审核后由系统执行
 - **任务运行时**:售后事项、Agent 运行、执行步骤、审批单全量落库,支持会话回放与审计
@@ -70,8 +70,8 @@ MCP 工具服务化、Langfuse 全链路观测、转人工、数据看板与知�
   模型没有直接改订单或退款的权限。
 - **策略与模型分离**:取消/退款资格由 policy-as-code 判定(金额、订单状态、风险分级),
   低风险自动执行、中风险确认、高风险人工审核;每次决策写入 `policy_decisions`。
-- **Agent Fallback 可观测**:图失败、超步数、空结果或 LLM 不可用时自动回退单步 Agent,
-  响应用 `agent_mode` 区分 `multi_step` / `single_step` / `single_step_fallback`。
+- **多步强停可观测**:图失败、超步或空结果时强停并返回兜底话术,不再回退单步 Agent;
+  响应用 `agent_mode` 区分 `multi_step` / `single_step`(无模型时走单步离线模式)。
 - **RAG 回答可追溯**:检索结果转成 `citations`(知识 id、分类、问题、相似度),
   随聊天响应返回并持久化到消息元数据,会话回放仍可查看来源。
 - **RAG 2.0 可验证**:四策略对照评测(vector / bm25 / hybrid / hybrid_rerank),
@@ -82,7 +82,7 @@ MCP 工具服务化、Langfuse 全链路观测、转人工、数据看板与知�
   订单查询在工具层校验归属。
 - **安全工程**:订单归属校验、订单号+手机后四位核验、PII 脱敏、
   Redis 原子滑动窗口限流、审批与审计日志,密钥仅从环境变量注入。
-- **测试不碰真实 LLM**:76 个 pytest,HTTP 主接缝 + 脚本化 Fake ChatModel,
+- **测试不碰真实 LLM**:137 个 pytest,HTTP 主接缝 + 脚本化 Fake ChatModel,
   覆盖多步图、复合任务、审批状态机、策略引擎、核验、fallback、RAG 引用/评测、
   混合检索、文档切块、工具引擎、SSE、反馈与知识飞轮。
 - **界面设计**:聊天页采用「售后受理台 / Service Docket」风格——暖纸底、
@@ -147,9 +147,9 @@ flowchart LR
     API --> RL[Redis 滑动窗口限流]
     API --> PRE[指代消解 / 情感 / 意图]
     PRE --> ROUTE{意图路由}
-    ROUTE -->|order_query / cancel_order / refund_request| GRAPH[LangGraph 多步 Agent<br/>只读工具 + 售后申请 ≤ 5 步]
+    ROUTE -->|order_query / cancel_order / refund_request| GRAPH[LangGraph 多步 Agent<br/>只读工具 + 售后申请 ≤ 6 步]
     GRAPH -->|成功| TOOLS[只读工具 / 申请工具]
-    GRAPH -->|失败 / 空结果 / 超步数| SINGLE[单步 Agent]
+    GRAPH -->|失败 / 空结果 / 超步数| STOP[强停兜底话术]
     ROUTE -->|其他意图| SINGLE
     SINGLE --> TOOLS
     SINGLE --> RAG[RAG 2.0<br/>BM25 + 向量 + RRF + Rerank]
@@ -285,13 +285,13 @@ LLM_MODEL=deepseek-chat
 ```
 
 重启后端生效。多步 Agent 与复合任务在真实 LLM 模式下走 `multi_step`;
-未配置 Key 时同一请求会回退单步 Agent,链路仍可用。
+未配置 Key 时走单步离线模式,订单查询、RAG 与转人工仍可用。
 
 ## 测试
 
 ### 后端 pytest
 
-需要基础设施容器运行(测试使用真实 MySQL/Redis/Milvus)。当前 **132 个测试**:
+需要基础设施容器运行(测试使用真实 MySQL/Redis/Milvus)。当前 **137 个测试**:
 
 ```bash
 cd backend
@@ -308,10 +308,10 @@ pip install -r requirements-dev.txt   # 已装可跳过
 - **候选去重**:标准化 + 词面相似度,避免近似重复知识进入审核队列;
 - **策略与运行时**:规则匹配/优先级/默认拒绝、事项复用、审批状态机;
 - **图单测**:单工具路径、复合任务(查询 → 提交申请)、知识检索引用、图失败、
-  空回复、无工具结果、5 步上限、历史传递;checkpointer + 订单选择/工单确认
+  空回复、无工具结果、6 步上限、历史传递;checkpointer + 订单选择/工单确认
   interrupt/resume;确定性路由图分支;
 - **API 集成**:多步订单查询、复合任务生成审批单、核验后执行、重复确认幂等、
-  策略拒绝/转人工、跨会话越权、强制图失败 fallback、转人工、订单越权校验、
+  策略拒绝/转人工、跨会话越权、强制图失败强停兜底、转人工、订单越权校验、
   RAG 引用与历史回放、SSE 事件流、知识飞轮队列/采纳/弃用、文档导入、
   用户反馈入池、评测看板、候选去重、后台作业、认证/RBAC、订单选择 resume;
 - **MCP**:知识/商品 + 订单/售后两个 Server 拆分、6 个工具注册、
@@ -635,7 +635,7 @@ python scripts/evaluate_refusal.py --self-check
 - [API 规范](docs/API_SPEC.md)
 - [数据库设计](docs/DATABASE_SCHEMA.md)
 - [部署指南](docs/DEPLOYMENT.md)
-- [ADR-0001:LangGraph 主路径 + Agent Fallback](docs/adr/0001-langgraph-primary-agent.md)
+- [ADR-0001:LangGraph 主路径 + 强停兜底](docs/adr/0001-langgraph-primary-agent.md)
 - [领域术语](CONTEXT.md)
 
 ## 许可证

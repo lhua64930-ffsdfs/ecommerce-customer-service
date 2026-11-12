@@ -79,6 +79,42 @@ def _merge_by_id(hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(merged.values(), key=lambda item: float(item.get("score") or 0), reverse=True)
 
 
+def _merge_round_robin(result_lists: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """各子句轮流出一条,按 chunk id 去重;同一小节只留最靠前的一条。
+
+    一问多意图时,如果直接拼接再按分数排序,一个意图可能占满前排;
+    轮转合并让每个子句的第一名都进入候选,重复小节挪到尾部。
+    """
+    out: list[dict[str, Any]] = []
+    seen_id: set[Any] = set()
+    seen_section: set[str] = set()
+    tail: list[dict[str, Any]] = []
+    max_len = max((len(hits) for hits in result_lists), default=0)
+    for index in range(max_len):
+        for hits in result_lists:
+            if index >= len(hits):
+                continue
+            hit = hits[index]
+            key = hit.get("id")
+            if key is None:
+                key = (
+                    hit.get("section_path", ""),
+                    hit.get("question", ""),
+                    hit.get("answer", ""),
+                )
+            if key in seen_id:
+                continue
+            seen_id.add(key)
+            section = str(hit.get("section_path") or "")
+            if section and section in seen_section:
+                tail.append(hit)
+            else:
+                if section:
+                    seen_section.add(section)
+                out.append(hit)
+    return out + tail
+
+
 class RetrievalService:
     """混合检索入口。"""
 
@@ -124,7 +160,7 @@ class RetrievalService:
             if len(clauses) > 1:
                 queries = clauses + [item for item in queries if item not in clauses]
 
-        all_hits: list[dict[str, Any]] = []
+        query_results: list[list[dict[str, Any]]] = []
         modes: list[str] = []
         for item in queries:
             hits, mode = await self._search_once(
@@ -135,9 +171,12 @@ class RetrievalService:
                 exclude_chunks=exclude_chunks,
             )
             modes.append(mode)
-            all_hits.extend(hits)
+            query_results.append(hits)
 
-        candidates = _merge_by_id(all_hits)
+        if len(query_results) > 1:
+            candidates = _merge_round_robin(query_results)
+        else:
+            candidates = _merge_by_id(query_results[0]) if query_results else []
         if not candidates:
             self.last_mode = "keyword"
             self.rag.last_search_mode = "keyword"

@@ -1,7 +1,8 @@
 """LangGraph checkpointer:SQLite 默认、Postgres 可选、内存兜底。
 
 - 只在 lifespan 初始化一次,图每次请求编译但共享同一个 saver;
-- thread_id 使用「会话 ID + 用户消息 ID」,按轮隔离,避免跨轮状态泄漏;
+- thread_id 使用会话 ID,跨轮续接历史(MewHelp 风格);
+  每轮的步骤/工具记录在图状态里重置,不会跨轮累加;
 - 初始化失败降级 InMemorySaver,不阻断应用启动。
 """
 from __future__ import annotations
@@ -18,21 +19,13 @@ _cm: Any = None
 _backend = "none"
 
 
-def turn_thread_id(session_id: str, user_message_id: int) -> str:
-    return f"{session_id}:{user_message_id}"
+def turn_thread_id(session_id: str, user_message_id: int | None = None) -> str:
+    """会话级 thread:保留 user_message_id 参数只为兼容旧调用方。
 
-
-def parse_thread_id(thread_id: str) -> tuple[str, int] | None:
-    try:
-        session_id, raw_id = thread_id.rsplit(":", 1)
-        return session_id, int(raw_id)
-    except (ValueError, AttributeError):
-        return None
-
-
-def thread_belongs_to_session(thread_id: str, session_id: str) -> bool:
-    parsed = parse_thread_id(thread_id)
-    return bool(parsed and parsed[0] == session_id)
+    MewHelp 用 conversation_id 作为 checkpoint thread;这里统一用 session_id,
+    每轮在图状态里重置 steps/tool_records/run_steps,消息由 add_messages 累积。
+    """
+    return session_id
 
 
 def get_checkpointer() -> Any:
@@ -124,10 +117,9 @@ async def cleanup_expired_threads() -> dict[str, int]:
     """清理超过 CHECKPOINT_TTL_HOURS 的未完成 thread。"""
     from datetime import datetime, timedelta
 
-    from sqlalchemy import select
+    from sqlalchemy import func, select
 
     from app.core.database import AsyncSessionLocal
-    from app.models.message import Message
     from app.models.session import Session
 
     if _saver is None:
@@ -137,17 +129,17 @@ async def cleanup_expired_threads() -> dict[str, int]:
     async with AsyncSessionLocal() as db:
         rows = (
             await db.execute(
-                select(Message.id, Session.session_id)
-                .join(Session, Message.session_id == Session.id)
-                .where(
-                    Message.sender_type == "user",
-                    Message.created_at < cutoff,
+                select(Session.session_id).where(
+                    func.coalesce(
+                        Session.last_message_at, Session.started_at
+                    )
+                    < cutoff
                 )
             )
-        ).all()
+        ).scalars().all()
 
     cleaned = 0
-    for message_id, session_uuid in rows:
-        await delete_thread(turn_thread_id(session_uuid, message_id))
+    for session_uuid in rows:
+        await delete_thread(session_uuid)
         cleaned += 1
     return {"threads": cleaned, "backend": _backend}

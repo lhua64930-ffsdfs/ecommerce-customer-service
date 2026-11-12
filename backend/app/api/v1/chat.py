@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.customer_agent import CustomerServiceAgent
-from app.agents.graph.checkpointer import parse_thread_id, turn_thread_id
+from app.agents.graph.checkpointer import turn_thread_id
 from app.agents.graph.multi_step_agent import (
     MultiStepAgent,
     MultiStepResumeError,
@@ -517,8 +517,7 @@ async def resume_message(
     db: AsyncSession = Depends(get_db),
     multi_step_agent: MultiStepAgent | None = Depends(get_multi_step_agent),
 ) -> ResumeResponse:
-    parsed = parse_thread_id(payload.thread_id)
-    if parsed is None or parsed[0] != payload.session_id:
+    if payload.thread_id != payload.session_id:
         raise HTTPException(status_code=400, detail="thread_id 无效")
 
     session = (
@@ -530,15 +529,6 @@ async def resume_message(
         raise HTTPException(status_code=404, detail="会话不存在")
     _ensure_session_access(request, session)
 
-    user_message = await db.get(Message, parsed[1])
-    if (
-        user_message is None
-        or user_message.session_id != session.id
-        or user_message.sender_type != "user"
-    ):
-        raise HTTPException(
-            status_code=409, detail="thread 已失效,请重新发送消息"
-        )
     if multi_step_agent is None:
         raise HTTPException(status_code=503, detail="多步 Agent 不可用")
 

@@ -1,7 +1,7 @@
 """多步 Agent 的 ChatModel 工厂(DeepSeek,OpenAI 兼容协议)。
 
 API Key 只从配置(环境变量 / backend/.env)读取;未配置时返回 ``None``,
-调用方据此走单步 fallback,不会发起任何外部请求。
+调用方据此走单步离线模式,不会发起任何外部请求。
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ def create_chat_model() -> BaseChatModel | None:
     """创建 LangChain ChatModel;未配置 Key 或 mock 模式返回 None。"""
     api_key = (settings.LLM_API_KEY or "").strip()
     if settings.LLM_PROVIDER.lower() == "mock" or not api_key:
-        logger.debug("LLM API Key 未配置,多步 Agent 将回退单步 Agent")
+        logger.debug("LLM API Key 未配置,多步 Agent 不可用,走单步离线模式")
         return None
 
     from langchain_openai import ChatOpenAI

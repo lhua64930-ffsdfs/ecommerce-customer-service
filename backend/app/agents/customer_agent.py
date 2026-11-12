@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.base_agent import BaseAgent
-from app.agents.graph.multi_step_agent import MultiStepAgent
+from app.agents.graph.multi_step_agent import MultiStepAgent, MultiStepError
 from app.agents.prompts.system_prompt import get_system_prompt
 from app.agents.tools.factory import build_default_tools
 from app.agents.tools.registry import permission_for
@@ -39,6 +39,12 @@ class CustomerServiceAgent(BaseAgent):
     RAG_FALLBACK_TEXT = (
         "抱歉,我暂时没有找到足够可靠的依据来回答这个问题。"
         "您可以换个说法,或回复「转人工」由客服进一步核实。"
+    )
+
+    # 多步图失败/超步/空结果时的强停兜底(不再回退单步 Agent)
+    MULTI_STEP_FALLBACK_TEXT = (
+        "抱歉,这次自动处理没有完成。"
+        "您可以换一种说法,或回复「转人工」由客服进一步处理。"
     )
 
     # 订单查询与售后写操作接入多步图,支持「查订单 → 判断状态 → 取消/退货」。
@@ -86,9 +92,10 @@ class CustomerServiceAgent(BaseAgent):
                     from app.agents.graph.orchestrator import GraphOrchestrator
 
                     return await GraphOrchestrator(self).run(user_message)
-                except Exception as exc:  # noqa: BLE001 - 图失败回退旧链路
+                except Exception as exc:  # noqa: BLE001 - 图整体异常时保留旧链路兼容兜底
                     logger.warning(
-                        "确定性路由图失败,回退旧单步链路: {}", exc
+                        "确定性路由图整体异常,使用旧链路兼容兜底(非多步 Agent fallback): {}",
+                        exc,
                     )
             return await self._chat_impl(user_message)
 
@@ -105,6 +112,12 @@ class CustomerServiceAgent(BaseAgent):
             tags=["chat", "resume"],
             input_data={"thread_id": thread_id, "resume": resume_value},
         ):
+            if settings.GRAPH_ORCHESTRATOR_ENABLED:
+                from app.agents.graph.orchestrator import GraphOrchestrator
+
+                return await GraphOrchestrator(self).resume(
+                    thread_id, resume_value
+                )
             result = await self.multi_step_agent.resume(
                 thread_id, resume_value, db=self.db
             )
@@ -148,7 +161,9 @@ class CustomerServiceAgent(BaseAgent):
 
         sentiment, sentiment_score = await self.sentiment_service.analyze(message)
         intent = await self.intent_service.recognize(
-            resolved_message, self.user_id
+            resolved_message,
+            self.user_id,
+            context=self.context_text(),
         )
         tag_current_trace(
             metadata={
@@ -171,10 +186,13 @@ class CustomerServiceAgent(BaseAgent):
         thread_id: str | None = None
         interrupt: dict[str, Any] | None = None
 
-        # 订单查询优先走 LangGraph;图不可用或失败时回退单步 Agent
+        # 订单相关意图优先走 LangGraph 多步图。
+        # 无模型时保留单步离线模式;有模型但失败/超步/空结果时只做强停兜底,
+        # 不再回退单步 Agent(MewHelp 风格)。
         if self._should_try_multi_step(intent):
             if self.multi_step_agent is None:
-                agent_mode = AgentMode.SINGLE_STEP_FALLBACK
+                # 离线演示模式:没有 ChatModel 时才走单步工具路径,不是失败 fallback
+                agent_mode = AgentMode.SINGLE_STEP
             else:
                 try:
                     multi_result = await self.multi_step_agent.run(
@@ -186,9 +204,14 @@ class CustomerServiceAgent(BaseAgent):
                         skill=skill_text,
                         thread_id=self.thread_id,
                     )
-                except Exception as exc:  # noqa: BLE001 - 回退是预期路径
-                    logger.warning("多步 Agent 失败,回退单步 Agent(Agent Fallback): {}", exc)
-                    agent_mode = AgentMode.SINGLE_STEP_FALLBACK
+                except MultiStepError as exc:
+                    logger.warning("多步 Agent 强停,返回兜底话术: {}", exc)
+                    response = self.MULTI_STEP_FALLBACK_TEXT
+                    agent_mode = AgentMode.MULTI_STEP
+                except Exception as exc:  # noqa: BLE001 - 图异常也强停,不再回退单步
+                    logger.exception("多步 Agent 异常,返回兜底话术: {}", exc)
+                    response = self.MULTI_STEP_FALLBACK_TEXT
+                    agent_mode = AgentMode.MULTI_STEP
                 else:
                     response = multi_result.response
                     tool_calls = list(multi_result.tool_calls)
@@ -369,7 +392,9 @@ class CustomerServiceAgent(BaseAgent):
 
         sentiment, sentiment_score = await self.sentiment_service.analyze(message)
         intent = await self.intent_service.recognize(
-            resolved_message, self.user_id
+            resolved_message,
+            self.user_id,
+            context=self.context_text(),
         )
         tag_current_trace(
             metadata={

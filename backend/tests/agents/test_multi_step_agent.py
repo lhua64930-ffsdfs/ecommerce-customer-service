@@ -218,6 +218,77 @@ async def test_answer_without_tool_call_is_rejected() -> None:
         )
 
 
+async def test_conversation_thread_reuses_history_and_resets_steps() -> None:
+    """会话级 checkpoint:第二轮带上一轮历史,但 steps/工具记录只算本轮。"""
+    model = ScriptedChatModel(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "query_order",
+                        "args": {"order_no": "ORDER20260401001"},
+                        "id": "call_1",
+                    }
+                ],
+            ),
+            AIMessage(content="第一轮查询完成。"),
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "query_order",
+                        "args": {"order_no": "ORDER20260315001"},
+                        "id": "call_2",
+                    }
+                ],
+            ),
+            AIMessage(content="第二轮查询完成。"),
+        ]
+    )
+    agent = MultiStepAgent(
+        chat_model=model,
+        tools={"query_order": FakeOrderTool()},
+        checkpointer=InMemorySaver(),
+    )
+    thread_id = "session-conversation-1"
+
+    first = await agent.run(
+        user_message="查订单 ORDER20260401001",
+        history=[],
+        db=None,
+        user_id=1,
+        session_id=thread_id,
+        thread_id=thread_id,
+    )
+    second = await agent.run(
+        user_message="再查订单 ORDER20260315001",
+        history=[],
+        db=None,
+        user_id=1,
+        session_id=thread_id,
+        thread_id=thread_id,
+    )
+
+    assert first.response == "第一轮查询完成。"
+    assert second.response == "第二轮查询完成。"
+    # 第二轮第一次模型调用应能看到第一轮的消息
+    second_turn_messages = model.calls[2]
+    assert any(
+        isinstance(message, HumanMessage)
+        and message.content == "查订单 ORDER20260401001"
+        for message in second_turn_messages
+    )
+    assert any(
+        isinstance(message, AIMessage) and message.content == "第一轮查询完成。"
+        for message in second_turn_messages
+    )
+    # 第二轮的工具记录只包含本轮调用,不会把上一轮累加进来
+    assert second.tool_calls == [{"tool": "query_order", "success": True}]
+    # 本轮 steps:模型 → 工具 → 模型(3 条);没有累加第一轮的步骤
+    assert len(second.steps) == 3
+
+
 async def test_step_limit_stops_runaway_tool_loop() -> None:
     model = ScriptedChatModel(
         responses=[

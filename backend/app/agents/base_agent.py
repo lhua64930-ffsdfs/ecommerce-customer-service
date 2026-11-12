@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any
 
+from app.services.memory_service import is_context_message, take_recent_with_context
 from app.utils.logger import logger
 
 
@@ -43,7 +44,16 @@ class BaseAgent(ABC):
     def get_history(self, last_n: int | None = None) -> list[dict[str, str]]:
         if last_n is None:
             return self.conversation_history
-        return self.conversation_history[-last_n:]
+        return take_recent_with_context(self.conversation_history, last_n)
+
+    def context_text(self) -> str:
+        """摘要 + 语义历史的拼接文本,供指代消解/意图识别使用。"""
+        rows = [
+            str(item.get("content") or "")
+            for item in self.conversation_history
+            if is_context_message(item)
+        ]
+        return "\n".join(item for item in rows if item)
 
     def clear_history(self) -> None:
         self.conversation_history = []

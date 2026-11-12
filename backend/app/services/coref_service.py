@@ -79,8 +79,10 @@ class CorefService:
                 return f"{query}(订单 {order_no})"
             return query
 
+        from app.services.memory_service import take_recent_with_context
+
         lines = []
-        for item in history[-6:]:
+        for item in take_recent_with_context(history, 6):
             role = "用户" if item.get("role") == "user" else "客服"
             lines.append(f"{role}:{item.get('content', '')}")
         prompt = COREF_PROMPT.format(

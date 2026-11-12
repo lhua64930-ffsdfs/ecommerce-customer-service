@@ -50,13 +50,14 @@ _Avoid_: 工作流、链、ReAct
 例如「查订单 ORDER20260401001 然后帮我取消」。
 _Avoid_: 批量任务、工作流
 
-**Agent Fallback**:
-当多步 Agent 失败、超过步数或没有可用结果时,改用单步 Agent 处理同一请求。
-_Avoid_: 降级(与检索降级混淆)
+**强停兜底 (Strong-stop fallback)**:
+当多步图失败、超过步数或没有可用结果时,不调用单步 Agent,
+直接返回固定兜底话术并结束本次请求。
+_Avoid_: Agent Fallback、回退单步 Agent
 
 **Agent 模式 (Agent mode)**:
 本次请求实际使用的 Agent 路径,对应响应字段 `agent_mode`:
-多步 Agent(`multi_step`)、单步 Agent(`single_step`)、Agent Fallback(`single_step_fallback`)。
+多步 Agent(`multi_step`)、单步 Agent(`single_step`;无模型时走单步离线模式)。
 _Avoid_: 路由模式、处理类型、降级模式
 
 ## 工具与观测
@@ -96,8 +97,8 @@ _Avoid_: 请求、调用
 ## 运行时与安全
 
 **Checkpoint Thread**:
-LangGraph 按 `会话ID:用户消息ID` 隔离的一轮执行状态;
-用于 interrupt 后恢复,不跨轮复用。
+LangGraph 按 `会话ID` 保留的执行状态,跨轮续接;
+每轮重置步骤/工具记录,消息由 `add_messages` 累积,用于 interrupt 后恢复。
 _Avoid_: 会话、上下文(泛称)
 
 **中断 / 恢复 (Interrupt / Resume)**:

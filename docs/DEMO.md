@@ -55,12 +55,12 @@ curl -s http://127.0.0.1:8000/health
 | 模式 | 配置 | 用途 |
 | --- | --- | --- |
 | 真实 LLM | `backend/.env` 配置 `LLM_API_KEY=sk-...` | 演示多步 Agent、复合任务的完整主路径 |
-| mock | `LLM_API_KEY` 留空,或 `LLM_PROVIDER=mock` | 演示 fallback、RAG、转人工与离线可用 |
+| mock | `LLM_API_KEY` 留空,或 `LLM_PROVIDER=mock` | 演示单步离线模式、RAG、转人工与离线可用 |
 
 修改 `.env` 后需要重启后端。
 
 > 演示复合任务与多步订单查询时,建议先配置真实 Key 并冒烟一次,
-> 确认模型会按预期调用 `query_order` / `propose_after_sales_action`。未配置 Key 时系统会回退单步 Agent,
+> 确认模型会按预期调用 `query_order` / `propose_after_sales_action`。未配置 Key 时系统走单步离线模式,
 > 订单查询、RAG 引用与转人工仍然可用。
 
 ---
@@ -394,13 +394,13 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/chat/send \
   -d "{\"session_id\":\"$SESSION_ID\",\"content\":\"查订单 ORDER99999999999\"}"
 ```
 
-预期(无 Key / fallback 时):
+预期(无 Key / 单步离线模式时):
 
 ```json
 {
   "response": "未找到订单号 ORDER99999999999,请确认订单号是否正确",
   "tool_calls": [{ "tool": "query_order", "success": false }],
-  "agent_mode": "single_step_fallback"
+  "agent_mode": "single_step"
 }
 ```
 

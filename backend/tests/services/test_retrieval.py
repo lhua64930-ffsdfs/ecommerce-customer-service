@@ -1,6 +1,11 @@
 """混合检索基础函数单测(不连接 Milvus)。"""
 from app.services.evidence import compute_evidence_confidence
-from app.services.retrieval import arrange_head_tail, rrf_fuse, split_clauses
+from app.services.retrieval import (
+    _merge_round_robin,
+    arrange_head_tail,
+    rrf_fuse,
+    split_clauses,
+)
 
 
 def test_split_clauses_splits_multi_intent_query() -> None:
@@ -29,6 +34,31 @@ def test_rrf_fuse_prefers_item_present_in_both_lists() -> None:
     assert fused[0]["id"] == 2
     assert fused[0]["score"] == 1.0
     assert {item["id"] for item in fused} == {1, 2, 3}
+
+
+def test_merge_round_robin_interleaves_clause_results() -> None:
+    first = [{"id": 1}, {"id": 2}, {"id": 3}]
+    second = [{"id": 4}, {"id": 5}]
+
+    merged = _merge_round_robin([first, second])
+
+    assert [item["id"] for item in merged] == [1, 4, 2, 5, 3]
+
+
+def test_merge_round_robin_dedupes_ids_and_moves_repeated_sections_to_tail() -> None:
+    first = [
+        {"id": 1, "section_path": "退款"},
+        {"id": 2, "section_path": "退货"},
+    ]
+    second = [
+        {"id": 1, "section_path": "退款"},
+        {"id": 3, "section_path": "退款"},
+        {"id": 4, "section_path": "运费"},
+    ]
+
+    merged = _merge_round_robin([first, second])
+
+    assert [item["id"] for item in merged] == [1, 2, 4, 3]
 
 
 def test_arrange_head_tail_moves_second_to_tail() -> None:

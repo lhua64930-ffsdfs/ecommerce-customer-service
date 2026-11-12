@@ -83,8 +83,8 @@ async def test_chat_flow(client: httpx.AsyncClient) -> None:
     assert "13800006789" not in order_data["response"]
     assert "北京市朝阳区***" in order_data["response"]
     assert "建国路88号" not in order_data["response"]
-    # 测试默认不注入 ChatModel,订单查询走单步 fallback
-    assert order_data["agent_mode"] == "single_step_fallback"
+    # 测试默认不注入 ChatModel,订单查询走单步离线模式(不是多步失败 fallback)
+    assert order_data["agent_mode"] == "single_step"
 
     transfer_response = await client.post(
         "/api/v1/chat/send",
@@ -301,10 +301,10 @@ async def test_compound_order_then_cancel_requires_approval(
     assert repeated.json()["already_executed"] is True
 
 
-async def test_order_query_falls_back_when_graph_fails(
+async def test_order_query_strong_stops_when_graph_fails(
     client: httpx.AsyncClient,
 ) -> None:
-    """图执行失败时,同一请求回退单步 Agent,仍返回有用回复。"""
+    """多步图失败时强停并返回兜底话术,不再回退单步 Agent。"""
     app.dependency_overrides[get_chat_model] = lambda: ScriptedChatModel(
         fail_with="forced graph failure"
     )
@@ -319,9 +319,10 @@ async def test_order_query_falls_back_when_graph_fails(
 
     assert response.status_code == 200
     data = response.json()
-    assert data["agent_mode"] == "single_step_fallback"
-    assert data["tool_calls"] == [{"tool": "query_order", "success": True}]
-    assert "ORDER20260401001" in data["response"]
+    assert data["agent_mode"] == "multi_step"
+    assert data["tool_calls"] == []
+    assert "自动处理没有完成" in data["response"]
+    assert "ORDER20260401001" not in data["response"]
 
 
 async def test_order_selection_interrupt_and_resume(

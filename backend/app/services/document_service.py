@@ -45,6 +45,7 @@ async def import_document(
     source: str | None = None,
     chunk_size: int = 500,
     overlap: int = 80,
+    table_max_rows: int = 10,
 ) -> dict:
     """导入/替换一份 Markdown 文档,返回片段数量与向量化状态。"""
     title = title.strip()
@@ -70,7 +71,12 @@ async def import_document(
     db.add(document)
     await db.flush()
 
-    pieces = split_markdown(content, chunk_size=chunk_size, overlap=overlap)
+    pieces = split_markdown(
+        content,
+        chunk_size=chunk_size,
+        overlap=overlap,
+        table_max_rows=table_max_rows,
+    )
     chunks = [
         KnowledgeChunk(
             document_id=document.id,

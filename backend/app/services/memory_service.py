@@ -33,6 +33,27 @@ SUMMARY_PROMPT = """你是电商售后客服的会话摘要模块。请把下面
 
 _summary_tasks: dict[int, asyncio.Task] = {}
 
+# 摘要/语义历史行:滑窗截断时必须始终保留,否则 coref/意图/模型都看不到早期上下文
+CONTEXT_PREFIXES = ("[会话摘要]", "[较早的相关历史]")
+
+
+def is_context_message(item: dict[str, Any]) -> bool:
+    return str(item.get("content") or "").startswith(CONTEXT_PREFIXES)
+
+
+def take_recent_with_context(
+    history: list[dict[str, Any]], last_n: int
+) -> list[dict[str, Any]]:
+    """取最近 N 条,同时保留摘要/语义历史行(MewHelp ch07 的三处上下文注入)。"""
+    recent = history[-last_n:] if last_n > 0 else []
+    recent_ids = {id(item) for item in recent}
+    prefix = [
+        item
+        for item in history
+        if id(item) not in recent_ids and is_context_message(item)
+    ]
+    return prefix + recent
+
 
 def build_window(
     messages: list[dict[str, Any]],

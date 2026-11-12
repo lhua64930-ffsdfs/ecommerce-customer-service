@@ -12,6 +12,7 @@ from dataclasses import dataclass
 HEADER_RE = re.compile(r"^(#{1,4})\s+(.*)$")
 CJK_SEPARATORS = ["\n\n", "\n", "。", "！", "？", "；", "!", "?", ";", "，", " ", ""]
 SENTENCE_RE = re.compile(r"[^。！？!?…\n]*[。！？!?…\n]|[^。！？!?…\n]+$")
+TABLE_SEP_RE = re.compile(r"^\s*\|?[\s:|-]+\|?\s*$")
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,47 @@ def _trailing_sentences(text: str, max_chars: int) -> str:
         out.insert(0, sentence)
         total += len(sentence)
     return "".join(out)
+
+
+def _find_table_header(lines: list[str]) -> int:
+    """返回表头行下标(其后紧跟 --- 分隔行);无表格返回 -1。"""
+    for index in range(len(lines) - 1):
+        if (
+            lines[index].lstrip().startswith("|")
+            and TABLE_SEP_RE.match(lines[index + 1])
+            and "-" in lines[index + 1]
+        ):
+            return index
+    return -1
+
+
+def is_table_block(text: str) -> bool:
+    lines = [line for line in text.strip().splitlines() if line.strip()]
+    return _find_table_header(lines) != -1
+
+
+def split_table_rows(table_md: str, max_rows: int) -> list[str]:
+    """大表格按行切,每块重贴表头行 + 分隔行;首块保留表头前的散文行。"""
+    lines = [line for line in table_md.strip().splitlines() if line.strip()]
+    header_index = _find_table_header(lines)
+    if header_index == -1:
+        return [table_md.strip()]
+    preamble = lines[:header_index]
+    header = lines[header_index]
+    separator = lines[header_index + 1]
+    rows = lines[header_index + 2 :]
+    if len(rows) <= max_rows:
+        return [table_md.strip()]
+    pieces: list[str] = []
+    for index, start in enumerate(range(0, len(rows), max_rows)):
+        group = rows[start : start + max_rows]
+        block = (
+            [*preamble, header, separator, *group]
+            if index == 0
+            else [header, separator, *group]
+        )
+        pieces.append("\n".join(block))
+    return pieces
 
 
 def _recursive_split(
@@ -82,6 +124,7 @@ def split_markdown(
     markdown: str,
     chunk_size: int = 500,
     overlap: int = 80,
+    table_max_rows: int = 10,
 ) -> list[DocumentChunk]:
     """把 Markdown 切为带 section_path 的片段。"""
     lines = (markdown or "").splitlines()
@@ -107,11 +150,16 @@ def split_markdown(
 
     chunks: list[DocumentChunk] = []
     for section_path, text in sections:
-        pieces = _recursive_split(text, chunk_size, CJK_SEPARATORS)
+        table_block = is_table_block(text)
+        pieces = (
+            split_table_rows(text, table_max_rows)
+            if table_block
+            else _recursive_split(text, chunk_size, CJK_SEPARATORS)
+        )
         previous = ""
         for index, piece in enumerate(pieces):
             content = piece
-            if previous and overlap > 0:
+            if not table_block and previous and overlap > 0:
                 prefix = _trailing_sentences(previous, overlap)
                 if prefix and not content.startswith(prefix):
                     content = f"{prefix}{content}"

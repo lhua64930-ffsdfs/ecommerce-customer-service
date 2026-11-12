@@ -140,7 +140,7 @@
   "evidence_status": null,
   "run_id": "a1b2c3d4e5f6...",
   "agent_mode": "multi_step",
-  "thread_id": "session-uuid:42",
+  "thread_id": "session-uuid",
   "interrupt": null
 }
 ```
@@ -154,7 +154,7 @@
     "message": "请选择要办理的订单",
     "orders": [{ "order_no": "ORDER20260401001", "status": "paid" }]
   },
-  "thread_id": "session-uuid:42"
+  "thread_id": "session-uuid"
 }
 ```
 
@@ -205,11 +205,11 @@ MCP 开启时,`tool_calls` 可能带可选的 `transport` 字段:`mcp`(远程执
 
 | 值 | 含义 |
 | --- | --- |
-| `multi_step` | 订单查询 / 售后申请由 LangGraph 多步 Agent(只读工具 + 申请工具,最多 5 步)完成 |
-| `single_step` | 既有单步 Agent(转人工 / 只读工具 / RAG / LLM) |
-| `single_step_fallback` | 多步图不可用、执行失败、超步数或空结果时,自动回退单步 Agent |
+| `multi_step` | 订单查询 / 售后申请由 LangGraph 多步 Agent(只读工具 + 申请工具,最多 6 步)完成 |
+| `single_step` | 单步路径(转人工 / 只读工具 / RAG / LLM);无模型时为单步离线模式 |
 
-> 真实的取消/退款/退货写操作只能通过审批接口执行,模型无法直接写库。
+> 多步图失败、超步或空结果时仍返回 `multi_step` + 固定兜底话术,
+> 不再切换到单步 Agent。真实的取消/退款/退货写操作只能通过审批接口执行,模型无法直接写库。
 
 ### POST /api/v1/chat/verify-order
 
@@ -300,7 +300,7 @@ data: {"event":"done","message_id":88,"run_id":"...","result":{...}}
 ```json
 {
   "session_id": "xxx",
-  "thread_id": "xxx:42",
+  "thread_id": "xxx",
   "resume": { "type": "select_order", "order_no": "ORDER20260401001" }
 }
 ```
@@ -310,7 +310,7 @@ data: {"event":"done","message_id":88,"run_id":"...","result":{...}}
 ```json
 {
   "session_id": "xxx",
-  "thread_id": "xxx:43",
+  "thread_id": "xxx",
   "resume": { "type": "confirm_ticket", "confirmed": true }
 }
 ```

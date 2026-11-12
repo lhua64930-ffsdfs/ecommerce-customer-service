@@ -17,7 +17,6 @@ class AgentMode(str, Enum):
 
     MULTI_STEP = "multi_step"
     SINGLE_STEP = "single_step"
-    SINGLE_STEP_FALLBACK = "single_step_fallback"
 
 
 class SenderType(str, Enum):
@@ -131,7 +130,7 @@ class SendMessageResponse(BaseModel):
     run_id: str | None = Field(None, description="本次 Agent 运行ID")
     agent_mode: AgentMode = Field(
         AgentMode.SINGLE_STEP,
-        description="本次处理路径:multi_step / single_step / single_step_fallback",
+        description="本次处理路径:multi_step / single_step",
     )
     thread_id: str | None = Field(
         None, description="checkpoint thread;resume 时回传"
